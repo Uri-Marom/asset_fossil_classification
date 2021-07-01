@@ -1,3 +1,5 @@
+# fossil_classification.py
+
 import numpy as np
 import pandas as pd
 import re
@@ -83,7 +85,11 @@ def remove_common_words(l, common):
 
 
 def find_isin_col(df):
-    # Automatically identify columns with ISINs
+    '''
+    Automatically identify columns with ISINs
+    :param df: DataFrame
+    :return: isin_col: string
+    '''
     isin_pattern = r"^[A-Z]{2}([A-Z0-9]){9}[0-9]$"
     max_isin_cnt = 0
     for col in df:
@@ -98,6 +104,28 @@ def find_isin_col(df):
         return isin_col
     else:
         print("\nERROR: no ISINs in holdings file")
+
+
+def find_il_corp_num_col(df):
+    '''
+    Automatically identify columns with Israeli Corp Numbers (מספר תאגיד)
+    :param df:
+    :return:
+    '''
+    pattern = r"^5([0-9]){8}$"
+    max_pattern_cnt = 0
+    for col in df:
+        pattern_cnt = sum(df[col].astype(str).str.contains(pattern, na=False))
+        if pattern_cnt > max_pattern_cnt:
+            max_col = col
+            max_pattern_cnt = pattern_cnt
+
+    if max_pattern_cnt > 0:
+        print("\nHolding file Israel Corp col is: " + max_col)
+        print("number of Israel Corp Numbers: {} out of {} rows".format(max_pattern_cnt, df.shape[0]))
+        return max_col
+    else:
+        print("\nERROR: no Israel Corp Numbers in holdings file")
 
 
 def is_tlv(df, isin_col):
@@ -247,15 +275,20 @@ def prepare_holdings(holdings_path, sheet_num):
     print("columns: {}".format(holdings.columns))
     isin_col = find_isin_col(holdings)
     holdings[isin_col] = id_col_clean(holdings[isin_col])
-    if holdings_corp_or_issuer_col:
-        holdings[holdings_corp_or_issuer_col] = id_col_clean(holdings[holdings_corp_or_issuer_col])
-    return holdings, isin_col
+    il_corp_col = find_il_corp_num_col(holdings)
+    if il_corp_col:
+        holdings[il_corp_col] = id_col_clean(holdings[il_corp_col])
+    return holdings, isin_col, il_corp_col
 
 
 def fetch_latest_tlv_sec_num_to_issuer():
     # TODO: scrape from webpage
     #  "https://info.tase.co.il/_layouts/Tase/ManagementPages/Export.aspx?sn=none&GridId=106&AddCol=1&Lang=he-IL&CurGuid={6B3A2B75-39E1-4980-BE3E-43893A21DB05}&ExportType=3"
-    df = pd.read_csv("/Users/urimarom/Downloads/Data_20210529.csv", encoding="ISO-8859-8", skiprows=3, index_col=0)
+    df = pd.read_csv("/Users/urimarom/Downloads/Data_20210529.csv",
+                     encoding="ISO-8859-8",
+                     skiprows=3,
+                     dtype={"מספר תאגיד": str}
+                     )
     # print("TLV sec num to issuer columns: {}".format(df.columns))
     return df
 
@@ -269,9 +302,10 @@ def fetch_latest_isin2lei(isin2lei_path):
 
 def prepare_tlv_sec_num_to_issuer(tlv_s2i):
     tlv_s2i.columns = tlv_s2i.columns.str.strip()
-    tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["מספר מנפיק"])
+    tlv_s2i["""מס' ני"ע"""]= id_col_clean(tlv_s2i["""מס' ני"ע"""])
     tlv_s2i["ISIN"] = id_col_clean(tlv_s2i["ISIN"])
-    tlv_s2i.index = tlv_s2i.index.astype(str).str.strip()
+    tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["מספר מנפיק"])
+    tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["מספר תאגיד"])
     return tlv_s2i
 
 
@@ -281,16 +315,17 @@ def choose_best_issuer_num(row):
     elif not row["מספר מנפיק_x"]:
         return row["מספר מנפיק"]
     else:
-        if len(str(row["מספר מנפיק"])) < len(str(row["מספר מנפיק_x"])):
+        if (len(str(row["מספר מנפיק"])) < len(str(row["מספר מנפיק_x"]))) & (len(str(row["מספר מנפיק"])) > 0):
             return row["מספר מנפיק"]
         else:
             return row["מספר מנפיק_x"]
 
 
-def add_tlv_issuer_by_col(df, mapping, join_col):
+def add_tlv_issuer_by_col(df, mapping, holdings_join_col, mapping_join_col):
+    mapping = mapping.groupby(mapping_join_col).first()
     df_with_issuer = pd.merge(left=df,
                               right=mapping['מספר מנפיק'],
-                              left_on=join_col,
+                              left_on=holdings_join_col,
                               right_index=True,
                               how='left'
                               )
@@ -298,10 +333,12 @@ def add_tlv_issuer_by_col(df, mapping, join_col):
     if "מספר מנפיק_y" in df_with_issuer.columns:
         # choose the more accurate issuer number
         df_with_issuer.rename({"מספר מנפיק_y":"מספר מנפיק"}, axis=1, inplace=True)
+        df_with_issuer["מספר מנפיק"] = id_col_clean(df_with_issuer["מספר מנפיק"])
         df_with_issuer["מספר מנפיק"] = df_with_issuer.apply(choose_best_issuer_num, axis='columns')
         df_with_issuer = df_with_issuer.drop(['מספר מנפיק_x'], axis=1)
     df_with_issuer["מספר מנפיק"] = id_col_clean(df_with_issuer["מספר מנפיק"])
-    print("ISINs in holdings with matching issuer number: {} out of total holdings {}".format(
+    print("Holdings with matching issuer number after joining by {}: {} out of total holdings {}".format(
+        holdings_join_col,
         df_with_issuer["מספר מנפיק"].notnull().sum(),
         df_with_issuer.shape[0]
     ))
@@ -655,7 +692,7 @@ def output(df, output_path):
     print("\nWriting results to {}".format(output_path))
 
 
-def main(tlv_path="/Users/urimarom/Downloads/ניתוח כל החברות בבורסה מעודכן.xlsx",
+def classify_holdings(tlv_path="/Users/urimarom/Downloads/ניתוח כל החברות בבורסה מעודכן.xlsx",
          prev_class_path="/Users/urimarom/Downloads/fossil_classification_until_q3_2020.csv",
          isin2lei_path="/Users/urimarom/Downloads/ISIN_LEI_20210317.csv",
          holdings_path="/Users/urimarom/Downloads/החזקות קרנות נאמניות - with manual.csv",
@@ -665,7 +702,7 @@ def main(tlv_path="/Users/urimarom/Downloads/ניתוח כל החברות בבו
          sheet_num=0
          ):
     # 1. prepare holdings file for classification
-    holdings, holdings_isin_col = prepare_holdings(holdings_path, sheet_num=sheet_num)
+    holdings, holdings_isin_col, holdings_il_corp_col = prepare_holdings(holdings_path, sheet_num=sheet_num)
     # If ticker exists, remove ticker information from instrument name
     if holdings_ticker_col:
         holdings = clean_instrument_from_ticker(holdings, holdings_company_col, holdings_ticker_col)
@@ -674,8 +711,8 @@ def main(tlv_path="/Users/urimarom/Downloads/ניתוח כל החברות בבו
     tlv_s2i = prepare_tlv_sec_num_to_issuer(fetch_latest_tlv_sec_num_to_issuer())
     isin2lei = fetch_latest_isin2lei(isin2lei_path)
     # 3. add issuer and LEI to holdings file
-    holdings_with_issuer = add_tlv_issuer_by_col(holdings, tlv_s2i, holdings_isin_col)
-    holding_with_issuer = add_tlv_issuer_by_col(holdings, tlv_s2i, "מספר תאגיד")
+    holdings_with_issuer = add_tlv_issuer_by_col(holdings, tlv_s2i, holdings_join_col=holdings_isin_col,mapping_join_col="""מס' ני"ע""")
+    holdings_with_issuer = add_tlv_issuer_by_col(holdings_with_issuer, tlv_s2i, holdings_join_col=holdings_il_corp_col, mapping_join_col="מספר תאגיד")
     if holdings_ticker_col:
         holdings_with_issuer = add_tlv_issuer_by_ticker(
             holdings_with_issuer,
@@ -691,7 +728,7 @@ def main(tlv_path="/Users/urimarom/Downloads/ניתוח כל החברות בבו
     prev_class = prepare_prev_class(fetch_latest_prev_classified(prev_class_path))
     # 5. add issuer and LEI for previously classified
     # to be removed - prev_class file should already have issuer_number and LEI
-    prev_class = add_tlv_issuer_by_col(prev_class, tlv_s2i, join_col="security_num")
+    prev_class = add_tlv_issuer_by_col(prev_class, tlv_s2i, holdings_join_col="security_num", mapping_join_col="""מס' ני"ע""")
     prev_class = add_LEI_by_isin(prev_class, isin2lei, df_isin_col="security_num")
     output(prev_class, "prev with added issuer and LEI.csv")
     # 6. match holdings with previously classified - by ISIN, issuer or LEI
@@ -745,6 +782,7 @@ def main(tlv_path="/Users/urimarom/Downloads/ניתוח כל החברות בבו
     # output path = input path with 'with fossil classification' added
     output_path = ''.join(holdings_path.split('.')[:-1]) + ' with fossil classification.' + holdings_path.split('.')[-1]
     output(holdings_propagate_is_fossil, output_path)
+    return
 
 holdings_path = "/Users/urimarom/Downloads/2021q1 reports/quarterly_holdings_for_classification.xlsx"
 tlv_path = "/Users/urimarom/Downloads/ניתוח כל החברות בבורסה מעודכן.xls"
@@ -755,7 +793,7 @@ holdings_ticker_col = None
 holdings_company_col = "שם המנפיק/שם נייר ערך"
 sheet_num = 2
 
-main(tlv_path,
+classify_holdings(tlv_path,
      prev_class_path,
      isin2lei_path,
      holdings_path,
@@ -764,7 +802,6 @@ main(tlv_path,
      holdings_company_col,
      sheet_num
      )
-
 # ***** Final Results *****
 # is_fossil coverage:
 # NaN    5949
