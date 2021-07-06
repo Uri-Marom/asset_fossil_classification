@@ -212,7 +212,7 @@ def prepare_tlv(tlv):
     tlv["מספר תאגיד"] = id_col_clean(tlv["מספר תאגיד"])
 
     def ken_lo_to_binary(s):
-        if s == 'כן':
+        if s.startswith('כן'):
             return 1
         elif s in ['לא', 'אולי']:
             return 0
@@ -785,13 +785,13 @@ def classify_holdings(tlv_path="/Users/urimarom/Downloads/ניתוח כל החב
     return
 
 holdings_path = "/Users/urimarom/Downloads/2021q1 reports/quarterly_holdings_for_classification.xlsx"
-tlv_path = "/Users/urimarom/Downloads/ניתוח כל החברות בבורסה מעודכן.xls"
+tlv_path = "/Users/urimarom/Downloads/כל החברות 2021 - 15.6.21.xlsx"
 prev_class_path = "/Users/urimarom/Downloads/חשיפה לפוסיליים - סיווגי רבעונים קודמים - up to 2020Q4.csv"
 isin2lei_path = "/Users/urimarom/Downloads/ISIN_LEI_20210625.csv"
 holdings_corp_or_issuer_col = "מספר מנפיק"
 holdings_ticker_col = None
 holdings_company_col = "שם המנפיק/שם נייר ערך"
-sheet_num = 2
+sheet_num = 0
 
 classify_holdings(tlv_path,
      prev_class_path,
