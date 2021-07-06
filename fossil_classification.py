@@ -214,7 +214,7 @@ def prepare_tlv(tlv):
     def ken_lo_to_binary(s):
         if s.startswith('כן'):
             return 1
-        elif s in ['לא', 'אולי']:
+        elif s.startswith('לא'):
             return 0
         else:
             return np.nan
