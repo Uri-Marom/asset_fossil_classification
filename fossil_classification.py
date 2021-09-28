@@ -134,22 +134,23 @@ def is_tlv(df, isin_col):
 
 # Fossil Free Funds list functions
 def fetch_latest_fff_list():
-    # fetch newest file from Fossil Free Funds
+    # fetch newest file from Fossil Free Funds - stopped working (asking for email), reverted to manual download
     # returns Dataframe read from excel file
-    site = "https://fossilfreefunds.org/how-it-works"
-    hdr = {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
-        'Accept-Encoding': 'none',
-        'Accept-Language': 'en-US,en;q=0.8',
-        'Connection': 'keep-alive'}
-    req = urllib.request.Request(site, headers=hdr)
-    html_page = urllib.request.urlopen(req)
-    soup = BeautifulSoup(html_page, "html.parser")
-    links_in_page = [link.get('href') for link in soup.findAll('a')]
-    fff_latest_company_screens_url = [l for l in links_in_page if 'Invest+Your+Values+company+screens' in l][0]
-    print("\n** Fetching latest Fossil Free Funds company screens list **")
+    # site = "https://fossilfreefunds.org/how-it-works"
+    # hdr = {
+    #     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+    #     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    #     'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+    #     'Accept-Encoding': 'none',
+    #     'Accept-Language': 'en-US,en;q=0.8',
+    #     'Connection': 'keep-alive'}
+    # req = urllib.request.Request(site, headers=hdr)
+    # html_page = urllib.request.urlopen(req)
+    # soup = BeautifulSoup(html_page, "html.parser")
+    # links_in_page = [link.get('href') for link in soup.findAll('a')]
+    # fff_latest_company_screens_url = [l for l in links_in_page if 'Invest+Your+Values+company+screens' in l][0]
+    # print("\n** Fetching latest Fossil Free Funds company screens list **")
+    fff_latest_company_screens_url = "/Users/urimarom/Downloads/Invest+Your+Values+company+screens+20210909.xlsx"
     print("Using "+fff_latest_company_screens_url)
     return pd.read_excel(fff_latest_company_screens_url, sheet_name=1)
 
@@ -784,14 +785,14 @@ def classify_holdings(tlv_path="/Users/urimarom/Downloads/ניתוח כל החב
     output(holdings_propagate_is_fossil, output_path)
     return
 
-holdings_path = "/Users/urimarom/Downloads/2021q1 reports/quarterly_holdings_for_classification.xlsx"
-tlv_path = "/Users/urimarom/Downloads/כל החברות 2021 - 15.6.21.xlsx"
-prev_class_path = "/Users/urimarom/Downloads/חשיפה לפוסיליים - סיווגי רבעונים קודמים - up to 2020Q4.csv"
-isin2lei_path = "/Users/urimarom/Downloads/ISIN_LEI_20210625.csv"
+holdings_path = "/Users/urimarom/Downloads/holdings reports/2021q2 reports/quarterly_holdings_for_classification.xlsx"
+tlv_path = "/Users/urimarom/Downloads/כל החברות 2021 -אוגוסט 2021.xlsx"
+prev_class_path = "/Users/urimarom/Downloads/holdings reports/2021q2 reports/חשיפה לפוסיליים - סיווגי רבעונים קודמים - all up to 2021Q1.csv"
+isin2lei_path = "/Users/urimarom/Downloads/ISIN_LEI_20210928.csv"
 holdings_corp_or_issuer_col = "מספר מנפיק"
 holdings_ticker_col = None
 holdings_company_col = "שם המנפיק/שם נייר ערך"
-sheet_num = 0
+sheet_num = 1
 
 classify_holdings(tlv_path,
      prev_class_path,
