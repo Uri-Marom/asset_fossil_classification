@@ -15,7 +15,8 @@ def last_updated():
 
 def get_reports_from_response(response_directory):
     """get reports dataframe from response.json within the response directory.
-    Using the http response recorded while searching for reports here: https://employersinfocmp.cma.gov.il/#/publicreports
+    Using the http response recorded while searching for reports here:
+    https://employersinfocmp.cma.gov.il/#/publicreports
 
     :param response_directory: text, path of the directory with the response.
     :return: DataFrame: the response json as DataFrame, with added download_link
@@ -274,7 +275,7 @@ def get_totals(summary_sheets):
     :param summary_sheets: a DataFrame of data allocations from reports summary sheets
     :return: the totals extracted from the reports summary sheets
     """
-    totals = summary_sheets[summary_sheets["asset"].str.startswith(('סה'))]
+    totals = summary_sheets[summary_sheets["asset"].str.startswith('סה')]
     print("Number of totals found: {}".format(totals["report_id"].nunique()))
     return totals
 
@@ -316,16 +317,30 @@ def no_holding_num_types():
     return ['זכויות מקרקעין', 'השקעה בחברות מוחזקות', 'השקעות אחרות']
 
 
+def is_number(s):
+    """checks if a string is a number
+
+    :param s: string
+    :return: true if s is a float, flase otherwise
+    """
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
 def clean_holdings(holdings):
     """ cleans all_holdings DataFrame, removing non-relevant rows and columns
 
-    :param holdings:
-    :return:
+    :param holdings: DataFrame
+    :return: cleaned holdings DataFrame
     """
     # remove holdings with no name
     holdings['שם המנפיק/שם נייר ערך'] = holdings['שם המנפיק/שם נייר ערך'].astype('str')
     holdings_clean = holdings[holdings['שם המנפיק/שם נייר ערך'].
-                                  str.replace("0", "").str.replace("nan", "").str.strip() != ""]
+                                  str.replace("0", "").str.replace("nan", "").str.strip() != ""
+                              ]
     # remove "total" lines
     total_lines = (holdings_clean['שם המנפיק/שם נייר ערך'].str.startswith('סה"כ')) & (
         holdings_clean['מספר ני"ע'].isnull())
@@ -336,7 +351,9 @@ def clean_holdings(holdings):
     missing_holding_num_lines = (~holdings_clean["holding_type"].isin(no_holding)) & (
         holdings_clean['מספר ני"ע'].isnull())
     holdings_clean = holdings_clean[~missing_holding_num_lines]
-    print("before cleaning: {}\n after cleaning: {}".format(len(holdings), len(holdings_clean)))
+    # remove lines with שווי that is not a number
+    holdings_clean = holdings_clean[holdings_clean['שווי'].map(is_number)]
+    print("\nbefore cleaning: {}\n after cleaning: {}".format(len(holdings), len(holdings_clean)))
     # remove redundant columns
     cols_to_keep = [
         'שם המנפיק/שם נייר ערך', 'מספר ני"ע', 'מספר מנפיק', 'דירוג', 'שם מדרג',
@@ -377,24 +394,19 @@ def add_report_data(holdings, reports):
     # identify manually added reports by report_id (filename)
     manually_added_reports_mask = holdings["report_id"].str.contains("_")
     if manually_added_reports_mask.sum() > 0:
+        manual_report_ids = holdings.loc[manually_added_reports_mask, "report_id"]
         # update corp_id
         holdings.loc[
             manually_added_reports_mask,
             "ParentCorpLegalId"
-        ] = holdings.loc[
-            manually_added_reports_mask,
-            "report_id"
-        ].str.split("_").str[0]
+        ] = manual_report_ids.str.split("_").str[0]
 
         # update System
         holdings.loc[
             manually_added_reports_mask,
             "SystemName"
-        ] = holdings.loc[
-            manually_added_reports_mask,
-            "report_id"
-        ].str.split("_").str[1].str[0].map({
-            "b": "חיים ואובדן כושר עבודה",
+        ] = manual_report_ids.str.split("_").str[1].str[0].map({
+            "b": "ביטוח",
             "p": "פנסיה",
             "g": "גמל"
         })
@@ -403,11 +415,16 @@ def add_report_data(holdings, reports):
         holdings.loc[
             manually_added_reports_mask,
             "ProductNum"
-        ] = holdings.loc[
-                manually_added_reports_mask,
-                "report_id"
-            ].str.split("_").str[1].str[1:]
-        # update corp&date details for manually added reports
+        ] = manual_report_ids.str.split("_").str[1].str[1:]
+        # replace "sum" with 0 for manually added reports
+        holdings.loc[holdings["ProductNum"] == 'sum', 'ProductNum'] = 0
+
+        # update ReportPeriodDesc
+        quarter = manual_report_ids.str.split("_").str[2].str[1]
+        report_year = "20" + manual_report_ids.str.split("_").str[2].str[2:]
+        holdings.loc[manually_added_reports_mask, "ReportPeriodDesc"] = report_year + " רבעון " + quarter
+
+        # update corp details for manually added reports
         corps = reports[["ParentCorpLegalId", "ParentCorpName"]].set_index("ParentCorpLegalId").drop_duplicates()
         corps.index = corps.index.astype('str')
 
@@ -422,3 +439,51 @@ def add_report_data(holdings, reports):
         # important! keep columns order
         holdings.loc[manually_added_reports_mask, holdings.columns] = updated[holdings.columns]
     return holdings
+
+
+def get_latest_fossil_classifications(prev_cls_fn):
+    """Get the latest fossil classifications from a previous classifications file
+    which contains all previous classifications
+
+    :param prev_cls_fn: previous classifications filename
+    :return: latest classification per security_num
+    """
+    prev_csv = pd.read_csv(prev_cls_fn, parse_dates=['classification_date'])
+    # get only latest classification (most updated) per security_num
+    latest_cls = prev_csv.drop_duplicates(subset=['security_num'])
+    latest_cls = latest_cls[["security_num", "is_fossil"]].set_index("security_num")
+    latest_cls.index = latest_cls.index.astype('str')
+    print("previously classified by is_fossil:")
+    print(latest_cls["is_fossil"].value_counts(dropna=False))
+    return latest_cls
+
+
+def add_fossil_classifications(holdings, fossil_cls):
+    """Add fossil classifications to a holding file
+
+    :param holdings: a holding file
+    :param fossil_cls: fossil classification, one row per security_num
+    :return: holding file with added classification and fossil sum columns
+    """
+    # 1. separate holdings with no holding number
+    holdings_with_num = holdings[holdings['מספר ני"ע'].notnull()]
+    holdings_no_num = holdings[holdings['מספר ני"ע'].isnull()]
+    print("all_holdings: {}".format(len(holdings)))
+    print("having holding number: {}".format(len(holdings_with_num)))
+    print("without holding number: {}".format(len(holdings_no_num)))
+    # 2. add fossil classification based on security_num
+    holdings_with_num['מספר ני"ע'] = holdings_with_num['מספר ני"ע'].astype('str')
+    holdings_cls = holdings_with_num.merge(fossil_cls,
+                                           left_on='מספר ני"ע',
+                                           right_index=True,
+                                           how='left'
+                                           )
+    print("Holdings by fossil classification:")
+    print(holdings_cls["is_fossil"].value_counts(dropna=False))
+    # 3. add fossil sum שווי פוסילי
+    holdings_cls["שווי פוסילי"] = holdings_cls["שווי"] * holdings_cls["is_fossil"]
+    print("total fossil sum: {}".format(holdings_cls["שווי פוסילי"].sum()))
+    holdings_cls = pd.concat([holdings_cls, holdings_no_num])
+    print("holdings count before classification: {}".format(len(holdings)))
+    print("holdings count after classification: {}".format(len(holdings_cls)))
+    return holdings_cls
