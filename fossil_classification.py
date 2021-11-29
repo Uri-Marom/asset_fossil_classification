@@ -125,7 +125,8 @@ def find_il_corp_num_col(df):
         print("number of Israel Corp Numbers: {} out of {} rows".format(max_pattern_cnt, df.shape[0]))
         return max_col
     else:
-        print("\nERROR: no Israel Corp Numbers in holdings file")
+        print("\nERROR: no Israel Corp Numbers in holdings file, reverting to default")
+        return 'מספר מנפיק'
 
 
 def is_tlv(df, isin_col):
@@ -785,7 +786,7 @@ def classify_holdings(tlv_path="/Users/urimarom/Downloads/ניתוח כל החב
     output(holdings_propagate_is_fossil, output_path)
     return
 
-holdings_path = "/Users/urimarom/Downloads/holdings reports/2021q2 reports/quarterly_holdings_for_classification.xlsx"
+holdings_path = "/Users/urimarom/Downloads/missing reports/quarterly_holdings_for_classification.xlsx"
 tlv_path = "/Users/urimarom/Downloads/כל החברות 2021 -אוגוסט 2021.xlsx"
 prev_class_path = "/Users/urimarom/Downloads/holdings reports/2021q2 reports/חשיפה לפוסיליים - סיווגי רבעונים קודמים - all up to 2021Q1.csv"
 isin2lei_path = "/Users/urimarom/Downloads/ISIN_LEI_20210928.csv"
