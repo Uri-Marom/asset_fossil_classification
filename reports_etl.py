@@ -449,10 +449,10 @@ def get_latest_fossil_classifications(prev_cls_fn):
     :return: latest classification per security_num
     """
     prev_csv = pd.read_csv(prev_cls_fn, parse_dates=['classification_date'])
+    prev_csv["security_num"] = prev_csv["security_num"].astype('str')
     # get only latest classification (most updated) per security_num
     latest_cls = prev_csv.drop_duplicates(subset=['security_num'])
     latest_cls = latest_cls[["security_num", "is_fossil"]].set_index("security_num")
-    latest_cls.index = latest_cls.index.astype('str')
     print("previously classified by is_fossil:")
     print(latest_cls["is_fossil"].value_counts(dropna=False))
     return latest_cls
@@ -472,7 +472,9 @@ def add_fossil_classifications(holdings, fossil_cls):
     print("having holding number: {}".format(len(holdings_with_num)))
     print("without holding number: {}".format(len(holdings_no_num)))
     # 2. add fossil classification based on security_num
-    holdings_with_num['מספר ני"ע'] = holdings_with_num['מספר ני"ע'].astype('str')
+    # clean join columns
+    holdings_with_num['מספר ני"ע'] = holdings_with_num['מספר ני"ע'].astype('str').str.strip()
+    fossil_cls.index = fossil_cls.index.astype('str').str.strip()
     holdings_cls = holdings_with_num.merge(fossil_cls,
                                            left_on='מספר ני"ע',
                                            right_index=True,
@@ -487,3 +489,23 @@ def add_fossil_classifications(holdings, fossil_cls):
     print("holdings count before classification: {}".format(len(holdings)))
     print("holdings count after classification: {}".format(len(holdings_cls)))
     return holdings_cls
+
+
+def report_period_desc_to_date(period_desc):
+    """translates report period desc (Hebrew text) to date
+
+    :param period_desc: report period desc (Hebrew text)
+    :return: report period as date
+    """
+    year = period_desc[0:4]
+    quarter = period_desc[5:]
+    if quarter == 'רבעון 1':
+        quarter_date = '03-31'
+    elif quarter == 'רבעון 2':
+        quarter_date = '06-30'
+    elif quarter == 'רבעון 3':
+        quarter_date = '09-30'
+    elif quarter == 'רבעון 4':
+        quarter_date = '12-31'
+    period_date = year + "-" + quarter_date
+    return period_date
