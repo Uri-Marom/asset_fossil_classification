@@ -1,5 +1,5 @@
 # fossil_classification
-Fossil Classification of assets, used by the Israeli Clean Money Forum.
+Fossil Classification of investment assets, used by the Israeli Clean Money Forum.
 
 ## Fossil Ranking of Israeli institutional investors
 [The ranking](https://www.fossilfree.org.il/the-ranking), first published for 2021Q2, will be released every quarter.
