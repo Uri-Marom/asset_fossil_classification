@@ -6,25 +6,10 @@ import re
 import string
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
+from enrich_holdings import *
 from bs4 import BeautifulSoup
 import urllib.request
 pd.set_option('display.max_columns', None)
-
-
-# Auxiliary functions
-def id_col_clean(col):
-    new_col = pd.Series(col.astype(str).str.strip().str.upper())
-# remove '0' and other non valid values
-    new_col = new_col.apply(
-        lambda x: None if (x == '0') | (x == 'NAN') | (x == 'NONE') | (x == '') else x
-    )
-    return new_col
-
-
-def any_heb_char(s):
-    s = str(s)
-    # df["has_hebrew_char"] = df[string_column].map(lambda s: any_heb_char(s))
-    return any("\u0590" <= c <= "\u05EA" for c in s)
 
 
 def clean_ticker(s):
@@ -93,7 +78,7 @@ def find_isin_col(df):
     isin_pattern = r"^[A-Z]{2}([A-Z0-9]){9}[0-9]$"
     max_isin_cnt = 0
     for col in df:
-        isin_cnt = sum(df[col].astype(str).str.contains(isin_pattern, na=False))
+        isin_cnt = sum(df[col].astype(str).str.strip().str.contains(isin_pattern, na=False))
         if isin_cnt > max_isin_cnt:
             isin_col = col
             max_isin_cnt = isin_cnt
@@ -115,7 +100,7 @@ def find_il_corp_num_col(df):
     pattern = r"^5([0-9]){8}$"
     max_pattern_cnt = 0
     for col in df:
-        pattern_cnt = sum(df[col].astype(str).str.contains(pattern, na=False))
+        pattern_cnt = sum(df[col].astype(str).str.strip().str.contains(pattern, na=False))
         if pattern_cnt > max_pattern_cnt:
             max_col = col
             max_pattern_cnt = pattern_cnt
@@ -125,7 +110,7 @@ def find_il_corp_num_col(df):
         print("number of Israel Corp Numbers: {} out of {} rows".format(max_pattern_cnt, df.shape[0]))
         return max_col
     else:
-        print("\nERROR: no Israel Corp Numbers in holdings file, reverting to default")
+        print("\nERROR: no Israel Corp Numbers in holdings file, reverting to default: מספר מנפיק")
         return 'מספר מנפיק'
 
 
@@ -151,7 +136,7 @@ def fetch_latest_fff_list():
     # links_in_page = [link.get('href') for link in soup.findAll('a')]
     # fff_latest_company_screens_url = [l for l in links_in_page if 'Invest+Your+Values+company+screens' in l][0]
     # print("\n** Fetching latest Fossil Free Funds company screens list **")
-    fff_latest_company_screens_url = "/Users/urimarom/Downloads/Invest+Your+Values+company+screens+20210909.xlsx"
+    fff_latest_company_screens_url = "../../data_sources/Invest+Your+Values+company+screens.xlsx"
     print("Using "+fff_latest_company_screens_url)
     return pd.read_excel(fff_latest_company_screens_url, sheet_name=1)
 
@@ -239,6 +224,9 @@ def fetch_latest_prev_classified(prev_class_path):
 def prepare_prev_class(prev_class):
     prev_class["security_num"] = id_col_clean(prev_class["security_num"])
     prev_class["issuer_or_corp_num"] = id_col_clean(prev_class["issuer_or_corp_num"])
+    # keep only last row per security number
+    prev_class.sort_values(["classification_date", "issuer_or_corp_num"], ascending=False, inplace=True)
+    prev_class = prev_class.drop_duplicates(["security_num"])
     print("\n** Previously classified ISINs and corps **")
     print("is_fossil in previously classified")
     print(prev_class["is_fossil"].value_counts(dropna=False))
@@ -266,7 +254,7 @@ def prepare_holdings(holdings_path, sheet_num):
         # TODO: handle multiple sheets - run one by one?
         holdings = pd.read_excel(holdings_path, sheet_name=sheet_num)
     elif holdings_path.lower().endswith(".csv"):
-        holdings = pd.read_csv(holdings_path)
+        holdings = pd.read_csv(holdings_path, dtype=str)
     else:
         # TODO: return error
         print("holdings input file isn't Excel or CSV file")
@@ -286,7 +274,7 @@ def prepare_holdings(holdings_path, sheet_num):
 def fetch_latest_tlv_sec_num_to_issuer():
     # TODO: scrape from webpage
     #  "https://info.tase.co.il/_layouts/Tase/ManagementPages/Export.aspx?sn=none&GridId=106&AddCol=1&Lang=he-IL&CurGuid={6B3A2B75-39E1-4980-BE3E-43893A21DB05}&ExportType=3"
-    df = pd.read_csv("/Users/urimarom/Downloads/Data_20210529.csv",
+    df = pd.read_csv("../../data_sources/TASE mapping.csv",
                      encoding="ISO-8859-8",
                      skiprows=3,
                      dtype={"מספר תאגיד": str}
@@ -694,10 +682,10 @@ def output(df, output_path):
     print("\nWriting results to {}".format(output_path))
 
 
-def classify_holdings(tlv_path="/Users/urimarom/Downloads/ניתוח כל החברות בבורסה מעודכן.xlsx",
-         prev_class_path="/Users/urimarom/Downloads/fossil_classification_until_q3_2020.csv",
-         isin2lei_path="/Users/urimarom/Downloads/ISIN_LEI_20210317.csv",
-         holdings_path="/Users/urimarom/Downloads/החזקות קרנות נאמניות - with manual.csv",
+def classify_holdings(tlv_path="../../data_sources/TASE companies - fossil classification.xlsx",
+         prev_class_path="../../data_sources/prev_class.csv",
+         isin2lei_path="../../data_sources/ISIN_LEI.csv",
+         holdings_path="missing_cls.csv",
          holdings_corp_or_issuer_col="מספר מנפיק",
          holdings_ticker_col="TICKER",
          holdings_company_col="Instrument Name",
@@ -786,24 +774,6 @@ def classify_holdings(tlv_path="/Users/urimarom/Downloads/ניתוח כל החב
     output(holdings_propagate_is_fossil, output_path)
     return
 
-holdings_path = "/Users/urimarom/Downloads/missing reports/quarterly_holdings_for_classification.xlsx"
-tlv_path = "/Users/urimarom/Downloads/כל החברות 2021 -אוגוסט 2021.xlsx"
-prev_class_path = "/Users/urimarom/Downloads/holdings reports/2021q2 reports/חשיפה לפוסיליים - סיווגי רבעונים קודמים - all up to 2021Q1.csv"
-isin2lei_path = "/Users/urimarom/Downloads/ISIN_LEI_20210928.csv"
-holdings_corp_or_issuer_col = "מספר מנפיק"
-holdings_ticker_col = None
-holdings_company_col = "שם המנפיק/שם נייר ערך"
-sheet_num = 1
-
-classify_holdings(tlv_path,
-     prev_class_path,
-     isin2lei_path,
-     holdings_path,
-     holdings_corp_or_issuer_col,
-     holdings_ticker_col,
-     holdings_company_col,
-     sheet_num
-     )
 # ***** Final Results *****
 # is_fossil coverage:
 # NaN    5949
