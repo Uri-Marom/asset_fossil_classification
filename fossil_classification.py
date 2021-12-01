@@ -9,6 +9,7 @@ from fuzzywuzzy import process
 from enrich_holdings import *
 from bs4 import BeautifulSoup
 import urllib.request
+
 pd.set_option('display.max_columns', None)
 
 
@@ -136,8 +137,8 @@ def fetch_latest_fff_list():
     # links_in_page = [link.get('href') for link in soup.findAll('a')]
     # fff_latest_company_screens_url = [l for l in links_in_page if 'Invest+Your+Values+company+screens' in l][0]
     # print("\n** Fetching latest Fossil Free Funds company screens list **")
-    fff_latest_company_screens_url = "../../data_sources/Invest+Your+Values+company+screens.xlsx"
-    print("Using "+fff_latest_company_screens_url)
+    fff_latest_company_screens_url = "data_sources/Invest+Your+Values+company+screens.xlsx"
+    print("Using " + fff_latest_company_screens_url)
     return pd.read_excel(fff_latest_company_screens_url, sheet_name=1)
 
 
@@ -215,31 +216,31 @@ def prepare_tlv(tlv):
 
 
 # TODO: download file from a repository or db instead of using local
-def fetch_latest_prev_classified(prev_class_path):
+def fetch_latest_prev_classified(prev_class_path="data_sources/prev_class.csv"):
     prev_fossil_classification = pd.read_csv(prev_class_path)
     return prev_fossil_classification
 
 
 # 3. Previously classified, adding issuers and LEI
 def prepare_prev_class(prev_class):
-    prev_class["security_num"] = id_col_clean(prev_class["security_num"])
-    prev_class["issuer_or_corp_num"] = id_col_clean(prev_class["issuer_or_corp_num"])
+    prev_class['מספר ני"ע'] = id_col_clean(prev_class['מספר ני"ע'])
+    prev_class["שם המנפיק/שם נייר ערך"] = id_col_clean(prev_class["שם המנפיק/שם נייר ערך"])
     # keep only last row per security number
-    prev_class.sort_values(["classification_date", "issuer_or_corp_num"], ascending=False, inplace=True)
-    prev_class = prev_class.drop_duplicates(["security_num"])
+    prev_class.sort_values(["classification_date", "שם המנפיק/שם נייר ערך"], ascending=False, inplace=True)
+    prev_class = prev_class.drop_duplicates(['מספר ני"ע'])
     print("\n** Previously classified ISINs and corps **")
     print("is_fossil in previously classified")
     print(prev_class["is_fossil"].value_counts(dropna=False))
-    prev_grouped_by_sec_num = prev_class.groupby("security_num")
+    prev_grouped_by_sec_num = prev_class.groupby('מספר ני"ע')
     sec_num_with_diff_class = prev_grouped_by_sec_num.filter(lambda x:
                                                              (0 < x["is_fossil"].mean() < 1)
                                                              )
-# TODO: raise warning for ambiguously classified
+    # TODO: raise warning for ambiguously classified
     if len(sec_num_with_diff_class) > 0:
         print("\n*** Securities with both is_fossil=1 and is_fossil=0 ***")
         print(sec_num_with_diff_class)
 
-    prev_grouped_by_issuer = prev_class[prev_class["issuer_or_corp_num"] != 'NAN'].groupby("issuer_or_corp_num")
+    prev_grouped_by_issuer = prev_class[prev_class["שם המנפיק/שם נייר ערך"] != 'NAN'].groupby("שם המנפיק/שם נייר ערך")
     issuer_with_diff_class = prev_grouped_by_issuer.filter(lambda x:
                                                            (0 < x["is_fossil"].mean() < 1)
                                                            )
@@ -274,28 +275,34 @@ def prepare_holdings(holdings_path, sheet_num):
 def fetch_latest_tlv_sec_num_to_issuer():
     # TODO: scrape from webpage
     #  "https://info.tase.co.il/_layouts/Tase/ManagementPages/Export.aspx?sn=none&GridId=106&AddCol=1&Lang=he-IL&CurGuid={6B3A2B75-39E1-4980-BE3E-43893A21DB05}&ExportType=3"
-    df = pd.read_csv("../../data_sources/TASE mapping.csv",
+    df = pd.read_csv("data_sources/TASE mapping.csv",
                      encoding="ISO-8859-8",
                      skiprows=3,
-                     dtype={"מספר תאגיד": str}
+                     dtype=str
                      )
     # print("TLV sec num to issuer columns: {}".format(df.columns))
     return df
 
 
-def fetch_latest_isin2lei(isin2lei_path):
+def fetch_latest_isin2lei(isin2lei_path="data_sources/ISIN_LEI.csv"):
     # TODO: Fetch automatically from website
     # https://www.gleif.org/en/lei-data/lei-mapping/download-isin-to-lei-relationship-files
-    isin2lei = pd.read_csv(isin2lei_path, index_col=1)
+    isin2lei = pd.read_csv(isin2lei_path)
     return isin2lei
 
 
 def prepare_tlv_sec_num_to_issuer(tlv_s2i):
     tlv_s2i.columns = tlv_s2i.columns.str.strip()
-    tlv_s2i["""מס' ני"ע"""]= id_col_clean(tlv_s2i["""מס' ני"ע"""])
     tlv_s2i["ISIN"] = id_col_clean(tlv_s2i["ISIN"])
-    tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["מספר מנפיק"])
-    tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["מספר תאגיד"])
+    # handle Hebrew version
+    if """מס' ני"ע""" in tlv_s2i.columns:
+        tlv_s2i['מספר ני"ע'] = id_col_clean(tlv_s2i["""מס' ני"ע"""])
+        tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["מספר מנפיק"])
+        tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["מספר תאגיד"])
+    elif "Security Number" in tlv_s2i.columns:
+        tlv_s2i['מספר ני"ע'] = id_col_clean(tlv_s2i["Security Number"])
+        tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["Issuer No"])
+        tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["Corporate No"])
     return tlv_s2i
 
 
@@ -322,7 +329,7 @@ def add_tlv_issuer_by_col(df, mapping, holdings_join_col, mapping_join_col):
     # TODO: use both original issuer number (if exists) and new one from mapping
     if "מספר מנפיק_y" in df_with_issuer.columns:
         # choose the more accurate issuer number
-        df_with_issuer.rename({"מספר מנפיק_y":"מספר מנפיק"}, axis=1, inplace=True)
+        df_with_issuer.rename({"מספר מנפיק_y": "מספר מנפיק"}, axis=1, inplace=True)
         df_with_issuer["מספר מנפיק"] = id_col_clean(df_with_issuer["מספר מנפיק"])
         df_with_issuer["מספר מנפיק"] = df_with_issuer.apply(choose_best_issuer_num, axis='columns')
         df_with_issuer = df_with_issuer.drop(['מספר מנפיק_x'], axis=1)
@@ -415,66 +422,109 @@ def add_LEI_by_isin(df, mapping, df_isin_col):
 
 
 # Matching functions: holdings with prev, TLV list, FFF list
-def match_holdings_with_prev(holdings, prev, holdings_isin_col, holdings_corp_or_issuer_col):
-    # 1. matching by ISIN / security number
-    print("\n1. matching to previously classified by ISIN / security number")
-    prev_sec_num = prev.groupby("security_num").first()
-    holdings_prev_by_isin = pd.merge(left=holdings,
-                                     right=prev_sec_num['is_fossil'],
-                                     left_on=holdings_isin_col,
-                                     right_index=True,
-                                     how='left'
-                                     )
-    holdings_prev_by_isin.rename({"is_fossil": "is_fossil_prev_ISIN"}, axis=1, inplace=True)
+def match_holdings_with_prev(holdings, prev, holdings_il_sec_num_col):
+    # 1. matching by security number
+    print("\n1. matching to previously classified by Israeli security number")
+    prev_sec_num = prev.groupby('מספר ני"ע').first()
+    holdings = pd.merge(left=holdings,
+                        right=prev_sec_num['is_fossil'],
+                        left_on=holdings_il_sec_num_col,
+                        right_index=True,
+                        how='left'
+                        )
+    holdings.rename({"is_fossil": "is_fossil_prev_il_sec_num"}, axis=1, inplace=True)
     print("\nprevious is_fossil coverage")
     print("ISINs previously classified: {} out of total holdings: {}".format(
-        holdings_prev_by_isin["is_fossil_prev_ISIN"].notnull().sum(),
-        holdings_prev_by_isin.shape[0]
+        holdings["is_fossil_prev_il_sec_num"].notnull().sum(),
+        holdings.shape[0]
     ))
-    # 2. by issuer number
-    print("\n2. matching to previously classified by issuer number")
+    # 2. matching by ISIN
+    print("\n2. matching to previously classified by ISIN")
+    prev_sec_num = prev.groupby('ISIN').first()
+    holdings = pd.merge(left=holdings,
+                        right=prev_sec_num['is_fossil'],
+                        left_on="ISIN",
+                        right_index=True,
+                        how='left'
+                        )
+    holdings.rename({"is_fossil": "is_fossil_prev_ISIN"}, axis=1, inplace=True)
+    print("\nprevious is_fossil coverage")
+    print("ISINs previously classified: {} out of total holdings: {}".format(
+        holdings["is_fossil_prev_ISIN"].notnull().sum(),
+        holdings.shape[0]
+    ))
+    # 3. by issuer number
+    print("\n3. matching to previously classified by issuer number")
     prev_issuer = prev.groupby("מספר מנפיק").first()
-    holdings_prev_by_issuer = pd.merge(left=holdings_prev_by_isin,
-                                       right=prev_issuer['is_fossil'],
-                                       left_on="מספר מנפיק",
-                                       right_index=True,
-                                       how='left'
-                                       )
-    holdings_prev_by_issuer.rename({"is_fossil": "is_fossil_prev_issuer"}, axis=1, inplace=True)
+    holdings = pd.merge(left=holdings,
+                        right=prev_issuer['is_fossil'],
+                        left_on="מספר מנפיק",
+                        right_index=True,
+                        how='left'
+                        )
+    holdings.rename({"is_fossil": "is_fossil_prev_issuer"}, axis=1, inplace=True)
     print("issuers previously classified: {} out of total holdings: {}".format(
-        holdings_prev_by_issuer["is_fossil_prev_issuer"].notnull().sum(),
-        holdings_prev_by_issuer.shape[0]
+        holdings["is_fossil_prev_issuer"].notnull().sum(),
+        holdings.shape[0]
     ))
-    # 3. by LEI - (Legal Entity Identifier, international)
-    print("\n3. matching to previously classified by LEI")
+    # 4. by LEI - (Legal Entity Identifier, international)
+    print("\n4. matching to previously classified by LEI")
     prev_LEI = prev.groupby("LEI").first()
-    holdings_prev = pd.merge(left=holdings_prev_by_issuer,
-                             right=prev_LEI['is_fossil'],
-                             left_on="LEI",
-                             right_index=True,
-                             how='left'
-                             )
-    holdings_prev.rename({"is_fossil": "is_fossil_prev_LEI"}, axis=1, inplace=True)
+    holdings = pd.merge(left=holdings,
+                        right=prev_LEI['is_fossil'],
+                        left_on="LEI",
+                        right_index=True,
+                        how='left'
+                        )
+    holdings.rename({"is_fossil": "is_fossil_prev_LEI"}, axis=1, inplace=True)
     print("LEIs previously classified: {} out of total holdings: {}".format(
-        holdings_prev["is_fossil_prev_LEI"].notnull().sum(),
-        holdings_prev.shape[0]
+        holdings["is_fossil_prev_LEI"].notnull().sum(),
+        holdings.shape[0]
     ))
-    return holdings_prev
+    # 5. by Israeli Corp Number
+    print("\n5. matching to previously classified by מספר תאגיד")
+    prev_il_corp_num = prev.groupby("מספר תאגיד").first()
+    holdings = pd.merge(left=holdings,
+                        right=prev_il_corp_num['is_fossil'],
+                        left_on="מספר תאגיד",
+                        right_index=True,
+                        how='left'
+                        )
+    holdings.rename({"is_fossil": "is_fossil_prev_il_corp_num"}, axis=1, inplace=True)
+    print("Israeli Corp Nums previously classified: {} out of total holdings: {}".format(
+        holdings["is_fossil_prev_il_corp_num"].notnull().sum(),
+        holdings.shape[0]
+    ))
+    return holdings
 
 
-def match_holdings_with_tlv(holdings, tlv, holdings_corp_or_issuer_col):
+def match_holdings_with_tlv(holdings, tlv):
     # join on issuer number
+    tlv_issuer = tlv.loc[tlv['מספר מנפיק'].notnull(), ['מספר מנפיק', 'רשימה שחורה']]
     holdings_with_tlv = pd.merge(left=holdings,
-                                 right=tlv[['מספר מנפיק', 'רשימה שחורה']],
-                                 right_on='מספר מנפיק',
-                                 left_on="מספר מנפיק",
+                                 right=tlv_issuer,
+                                 on='מספר מנפיק',
                                  how='left'
                                  )
     holdings_with_tlv.rename({"רשימה שחורה": "is_fossil_il_list_issuer"}, axis=1, inplace=True)
-    holdings_with_tlv["is_fossil_il_list_issuer"].value_counts(dropna=False)
-    print("\nTLV list is_fossil coverage")
+    print("\nTLV list is_fossil coverage: by issuer")
     print("classified: {} out of total holdings: {}".format(
         holdings_with_tlv["is_fossil_il_list_issuer"].notnull().sum(),
+        holdings_with_tlv.shape[0]
+    ))
+    # join on corporate number
+    tlv_il_corp = tlv.loc[tlv['מספר תאגיד'].notnull(), ['מספר תאגיד', 'רשימה שחורה']]
+    print("Number of rows: {} , Number of unique IL corps: {}".format(
+        tlv_il_corp.shape[0], tlv_il_corp["מספר תאגיד"].nunique()))
+    holdings_with_tlv = pd.merge(left=holdings_with_tlv,
+                                 right=tlv_il_corp,
+                                 on='מספר תאגיד',
+                                 how='left'
+                                 )
+    holdings_with_tlv.rename({"רשימה שחורה": "is_fossil_il_list_corp_num"}, axis=1, inplace=True)
+    print("\nTLV list is_fossil coverage: by IL corp num")
+    print("classified: {} out of total holdings: {}".format(
+        holdings_with_tlv["is_fossil_il_list_corp_num"].notnull().sum(),
         holdings_with_tlv.shape[0]
     ))
     return holdings_with_tlv
@@ -556,12 +606,12 @@ def best_match(s, l, first_word_thresh=95):
     for m in first_word_matches:
         if m[1] > first_word_thresh:
             agg_score = (
-                fuzz.ratio(s, m[0]) +
-                fuzz.partial_ratio(s, m[0]) +
-                fuzz.token_sort_ratio(s, m[0]) +
-                fuzz.token_set_ratio(s, m[0]) +
-                fuzz.partial_token_sort_ratio(s, m[0]) +
-                fuzz.partial_token_set_ratio(s, m[0])
+                    fuzz.ratio(s, m[0]) +
+                    fuzz.partial_ratio(s, m[0]) +
+                    fuzz.token_sort_ratio(s, m[0]) +
+                    fuzz.token_set_ratio(s, m[0]) +
+                    fuzz.partial_token_sort_ratio(s, m[0]) +
+                    fuzz.partial_token_set_ratio(s, m[0])
             )
             if agg_score > max_agg_score:
                 max_agg_score = agg_score
@@ -579,7 +629,7 @@ def match_holdings_with_fff_by_company_name(
         fff_company_col="Company",
         min_match_threshold=60,
         is_fossil_match_threshold=90
-        ):
+):
     # prepare company names for fuzzy matching
     # remove common words (LTD, Corp etc.)
     holdings["company_clean"] = holdings[holdings_company_col].map(lambda s: clean_company(s))
@@ -682,54 +732,50 @@ def output(df, output_path):
     print("\nWriting results to {}".format(output_path))
 
 
-def classify_holdings(tlv_path="../../data_sources/TASE companies - fossil classification.xlsx",
-         prev_class_path="../../data_sources/prev_class.csv",
-         isin2lei_path="../../data_sources/ISIN_LEI.csv",
-         holdings_path="missing_cls.csv",
-         holdings_corp_or_issuer_col="מספר מנפיק",
-         holdings_ticker_col="TICKER",
-         holdings_company_col="Instrument Name",
-         sheet_num=0
-         ):
+def classify_holdings(
+        tlv_path="data_sources/TASE companies - fossil classification.xlsx",
+        holdings_path="data/holdings_for_classification/missing_cls.csv",
+        holdings_ticker_col=None,
+        holdings_company_col="שם המנפיק/שם נייר ערך",
+        sheet_num=0
+):
     # 1. prepare holdings file for classification
-    holdings, holdings_isin_col, holdings_il_corp_col = prepare_holdings(holdings_path, sheet_num=sheet_num)
+    print("\n1.Preparing holding file")
+    holdings, holdings_il_sec_num_col, holdings_il_corp_col = prepare_holdings(holdings_path, sheet_num=sheet_num)
     # If ticker exists, remove ticker information from instrument name
     if holdings_ticker_col:
         holdings = clean_instrument_from_ticker(holdings, holdings_company_col, holdings_ticker_col)
         holdings_company_col = "company_name_cut_ticker"
     # 2. prepare mapping files: TLV security number to issuer & isin to LEI for international holdings
+    print("\n2.Preparing mapping files")
     tlv_s2i = prepare_tlv_sec_num_to_issuer(fetch_latest_tlv_sec_num_to_issuer())
-    isin2lei = fetch_latest_isin2lei(isin2lei_path)
-    # 3. add issuer and LEI to holdings file
-    holdings_with_issuer = add_tlv_issuer_by_col(holdings, tlv_s2i, holdings_join_col=holdings_isin_col,mapping_join_col="""מס' ני"ע""")
-    holdings_with_issuer = add_tlv_issuer_by_col(holdings_with_issuer, tlv_s2i, holdings_join_col=holdings_il_corp_col, mapping_join_col="מספר תאגיד")
+    isin2lei = fetch_latest_isin2lei()
+    # 3. enrich holdings file
+    holdings_enriched = add_all_id_types_to_holdings(holdings, tlv_s2i, isin2lei)
     if holdings_ticker_col:
-        holdings_with_issuer = add_tlv_issuer_by_ticker(
-            holdings_with_issuer,
+        holdings_enriched = add_tlv_issuer_by_ticker(
+            holdings_enriched,
             tlv_s2i,
-            df_isin_col=holdings_isin_col,
+            df_isin_col=holdings_il_sec_num_col,
             df_issuer_col="מספר מנפיק",
             df_ticker_col=holdings_ticker_col,
             mapping_heb_ticker_col="סימול(עברית)",
             mapping_eng_ticker_col="סימול(אנגלית)"
         )
-    holdings_with_LEI = add_LEI_by_isin(holdings_with_issuer, isin2lei, df_isin_col=holdings_isin_col)
     # 4. prepare previously classified as is_fossil
-    prev_class = prepare_prev_class(fetch_latest_prev_classified(prev_class_path))
+    prev_class = prepare_prev_class(fetch_latest_prev_classified())
     # 5. add issuer and LEI for previously classified
     # to be removed - prev_class file should already have issuer_number and LEI
-    prev_class = add_tlv_issuer_by_col(prev_class, tlv_s2i, holdings_join_col="security_num", mapping_join_col="""מס' ני"ע""")
-    prev_class = add_LEI_by_isin(prev_class, isin2lei, df_isin_col="security_num")
+    prev_class = add_all_id_types_to_holdings(prev_class, tlv_s2i, isin2lei)
     output(prev_class, "prev with added issuer and LEI.csv")
     # 6. match holdings with previously classified - by ISIN, issuer or LEI
     holdings_with_prev = match_holdings_with_prev(
-        holdings_with_LEI,
+        holdings_enriched,
         prev_class,
-        holdings_isin_col,
-        "מספר מנפיק"
+        holdings_il_sec_num_col
     )
     tlv = prepare_tlv(fetch_latest_tlv_list(tlv_path))
-    holdings_with_tlv = match_holdings_with_tlv(holdings_with_prev, tlv, holdings_corp_or_issuer_col)
+    holdings_with_tlv = match_holdings_with_tlv(holdings_with_prev, tlv)
     # 7. get Fossil Free Funds company list, transform to one row per ticker symbol
     fff_all = fetch_latest_fff_list()
     fff = prepare_fff(fff_all)
@@ -767,7 +813,7 @@ def classify_holdings(tlv_path="../../data_sources/TASE companies - fossil class
     holdings_final = consolidate_is_fossil(holdings_with_fff_by_company_name)
     # output(holdings_final, "debug_" + output_path)
     # 10. propagate is_fossil across ISIN and LEI (fill in missing is_fossil according to existing ones within group)
-    holdings_propagate_is_fossil = propagate_is_fossil(holdings_final, holdings_isin_col)
+    holdings_propagate_is_fossil = propagate_is_fossil(holdings_final, holdings_il_sec_num_col)
     holdings_propagate_is_fossil = propagate_is_fossil(holdings_propagate_is_fossil, "LEI")
     # output path = input path with 'with fossil classification' added
     output_path = ''.join(holdings_path.split('.')[:-1]) + ' with fossil classification.' + holdings_path.split('.')[-1]
