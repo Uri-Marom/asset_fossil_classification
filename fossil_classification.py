@@ -223,30 +223,30 @@ def fetch_latest_prev_classified(prev_class_path="data_sources/prev_class.csv"):
 
 # 3. Previously classified, adding issuers and LEI
 def prepare_prev_class(prev_class):
-    prev_class['מספר ני"ע'] = id_col_clean(prev_class['מספר ני"ע'])
-    prev_class["שם המנפיק/שם נייר ערך"] = id_col_clean(prev_class["שם המנפיק/שם נייר ערך"])
-    # keep only last row per security number
-    prev_class.sort_values(["classification_date", "שם המנפיק/שם נייר ערך"], ascending=False, inplace=True)
-    prev_class = prev_class.drop_duplicates(['מספר ני"ע'])
-    print("\n** Previously classified ISINs and corps **")
-    print("is_fossil in previously classified")
-    print(prev_class["is_fossil"].value_counts(dropna=False))
-    prev_grouped_by_sec_num = prev_class.groupby('מספר ני"ע')
-    sec_num_with_diff_class = prev_grouped_by_sec_num.filter(lambda x:
-                                                             (0 < x["is_fossil"].mean() < 1)
-                                                             )
-    # TODO: raise warning for ambiguously classified
-    if len(sec_num_with_diff_class) > 0:
-        print("\n*** Securities with both is_fossil=1 and is_fossil=0 ***")
-        print(sec_num_with_diff_class)
-
-    prev_grouped_by_issuer = prev_class[prev_class["שם המנפיק/שם נייר ערך"] != 'NAN'].groupby("שם המנפיק/שם נייר ערך")
-    issuer_with_diff_class = prev_grouped_by_issuer.filter(lambda x:
-                                                           (0 < x["is_fossil"].mean() < 1)
-                                                           )
-    if len(issuer_with_diff_class) > 0:
-        print("\n*** Issuers with both is_fossil=1 and is_fossil=0 ***")
-        print(issuer_with_diff_class)
+    for col in ['מספר ני"ע', 'ISIN', 'מספר מנפיק', 'LEI', 'מספר תאגיד']:
+        prev_class[col] = id_col_clean(prev_class[col])
+    # sort by classification date desc (latest classification comes first)
+    prev_class.sort_values(["classification_date"], ascending=False, inplace=True)
+    # TODO: verification function for prev_class
+    # print("\n** Previously classified ISINs and corps **")
+    # print("is_fossil in previously classified")
+    # print(prev_class["is_fossil"].value_counts(dropna=False))
+    # prev_grouped_by_sec_num = prev_class.groupby('מספר ני"ע')
+    # sec_num_with_diff_class = prev_grouped_by_sec_num.filter(lambda x:
+    #                                                          (0 < x["is_fossil"].mean() < 1)
+    #                                                          )
+    # # TODO: raise warning for ambiguously classified
+    # if len(sec_num_with_diff_class) > 0:
+    #     print("\n*** Securities with both is_fossil=1 and is_fossil=0 ***")
+    #     print(sec_num_with_diff_class)
+    #
+    # prev_grouped_by_issuer = prev_class[prev_class["שם המנפיק/שם נייר ערך"] != 'NAN'].groupby("שם המנפיק/שם נייר ערך")
+    # issuer_with_diff_class = prev_grouped_by_issuer.filter(lambda x:
+    #                                                        (0 < x["is_fossil"].mean() < 1)
+    #                                                        )
+    # if len(issuer_with_diff_class) > 0:
+    #     print("\n*** Issuers with both is_fossil=1 and is_fossil=0 ***")
+    #     print(issuer_with_diff_class)
     return prev_class
 
 
@@ -434,7 +434,7 @@ def match_holdings_with_prev(holdings, prev, holdings_il_sec_num_col):
                         )
     holdings.rename({"is_fossil": "is_fossil_prev_il_sec_num"}, axis=1, inplace=True)
     print("\nprevious is_fossil coverage")
-    print("ISINs previously classified: {} out of total holdings: {}".format(
+    print("Israeli security numbers previously classified: {} out of total holdings: {}".format(
         holdings["is_fossil_prev_il_sec_num"].notnull().sum(),
         holdings.shape[0]
     ))
@@ -684,13 +684,13 @@ def match_holdings_with_fff_by_company_name(
 # is_fossil consolidation - using multiple is_fossil_x flags to get is_fossil
 def consolidate_is_fossil(df):
     # produces final is_fossil flag, based on all the sub flags
-    # adds is_fossil_reason and is_fossil_certainty (=1 for all except FFF fuzzy matching)
     is_fossil_cols = [c for c in df.columns if c.startswith("is_fossil")]
-    # if any fossil flag is true, is_fossil := True
-    # if all available fossil flags are false, is_fossil := False
-    # if there are no available fossil flags, is_fossil := null
-    # TODO: handle rows with mixed flags (0 and 1)
-    df["is_fossil"] = df[is_fossil_cols].max(axis=1)
+    is_fossil_il_cols = [c for c in df.columns if c.startswith("is_fossil_il")]
+    # adding conflict indicator for rows with multiple fossil flags
+    df["is_fossil_conflict"] = df[is_fossil_cols].mean(axis=1).between(0, 1, inclusive=False)
+    # is_fossil_il gets precedence over the other flags
+    df["is_fossil"] = df[is_fossil_il_cols].max(axis=1)
+    df["is_fossil"] = df["is_fossil"].fillna(df[is_fossil_cols].max(axis=1))
     print("\n***** Final Results before propagation *****")
     print("is_fossil coverage:")
     print(df["is_fossil"].value_counts(dropna=False))

@@ -2,9 +2,10 @@ import pandas as pd
 import numpy as np
 import urllib.request as ur
 import time
-from os import listdir, chdir
-from os.path import isfile, join, splitext, getmtime
+from os import listdir
+from os.path import isfile, join, getmtime
 import re
+from pathlib import Path
 
 
 def last_updated():
@@ -27,6 +28,7 @@ def get_reports_from_response(response_directory):
     download_link_prefix = "https://employersinfocmp.cma.gov.il/api/PublicReporting/downloadFiles?IdDoc="
     download_link_suffix = "&extention=XLSX"
     reports["url"] = download_link_prefix + reports["DocumentId"].astype(str) + download_link_suffix
+    print("Number of reports included in response.json: {}".format(reports.shape[0]))
     return reports
 
 
@@ -161,9 +163,8 @@ def get_filename_list(reports_path):
     :param reports_path: the path of the downloaded reports
     :return: a list of report filenames
     """
-    chdir(reports_path)
     # get all reports from directory
-    reports_fn_list = [f for f in listdir(reports_path)
+    reports_fn_list = [join(reports_path,f) for f in listdir(reports_path)
                        if isfile(join(reports_path, f)) and not (f.startswith(".")) and f.endswith((".xlsx", ".xls"))]
     print("number of files to be pre-processed: {}".format(len(reports_fn_list)))
     return reports_fn_list
@@ -257,7 +258,7 @@ def process_summary_sheets(reports_fn_list):
         asset_alloc = get_asset_allocation_from_summary_sheet(sheet)
         if not asset_alloc.empty:
             # add report_id
-            report_id = splitext(fn)[0]
+            report_id = Path(fn).stem
             asset_alloc["report_id"] = report_id
             rep_num += 1
             all_summary_sheets_list.append(asset_alloc)
@@ -293,7 +294,7 @@ def extract_holdings(reports_fn_list):
         print("Processing report {} out of {}".format(rep_num, list_len), end="\r")
         report = pd.read_excel(fn, sheet_name=None, header=None)
         # add report_id
-        report_id = splitext(fn)[0]
+        report_id = Path(fn).stem
         for sheet_name in ignore_sheets(report):
             fixed_sheet_name = fix_sheet_name(sheet_name)
             sheet = clean_sheet(report[sheet_name])
@@ -306,6 +307,7 @@ def extract_holdings(reports_fn_list):
         rep_num += 1
 
     all_holdings = pd.concat(all_holdings_list, axis=0, ignore_index=True)
+    all_holdings["report_id"] = all_holdings["report_id"].astype(str)
     return all_holdings
 
 
@@ -315,6 +317,20 @@ def no_holding_num_types():
     :return: a list of holding types without expected holding number
     """
     return ['זכויות מקרקעין', 'השקעה בחברות מוחזקות', 'השקעות אחרות']
+
+
+def holdings_dtypes():
+    """Return holdings dtypes
+
+    :return: holding dtypes Dict
+    """
+    return {
+        'מספר ני"ע': str,
+        'מספר מנפיק': str,
+        'report_id': str,
+        'ParentCorpLegalId': str,
+        'ProductNum': str
+    }
 
 
 def is_number(s):
@@ -446,19 +462,25 @@ def get_latest_fossil_classifications(prev_cls_fn):
     which contains all previous classifications
 
     :param prev_cls_fn: previous classifications filename
-    :return: latest classification per security_num
+    :return: 2 DataFrames: latest classification per security_num and per ISIN
     """
     prev_csv = pd.read_csv(prev_cls_fn, parse_dates=['classification_date'])
-    prev_csv["security_num"] = prev_csv["security_num"].astype('str')
-    # get only latest classification (most updated) per security_num
-    latest_cls = prev_csv.drop_duplicates(subset=['security_num'])
-    latest_cls = latest_cls[["security_num", "is_fossil"]].set_index("security_num")
-    print("previously classified by is_fossil:")
-    print(latest_cls["is_fossil"].value_counts(dropna=False))
-    return latest_cls
+    prev_csv['מספר ני"ע'] = prev_csv['מספר ני"ע'].astype('str')
+    prev_csv['ISIN'] = prev_csv['ISIN'].astype('str').str.upper().str.strip()
+    # 1. get latest classification (most updated) per Israeli security num
+    latest_cls_by_sec_num = prev_csv.drop_duplicates(subset=['מספר ני"ע'])
+    latest_cls_by_sec_num = latest_cls_by_sec_num[['מספר ני"ע', "is_fossil"]].set_index('מספר ני"ע')
+    print("previously classified Israeli security nums by is_fossil:")
+    print(latest_cls_by_sec_num["is_fossil"].value_counts(dropna=False))
+    # 2. get latest classification (most updated) per ISIN
+    latest_cls_by_ISIN = prev_csv.drop_duplicates(subset=['ISIN'])
+    latest_cls_by_ISIN = latest_cls_by_ISIN[['ISIN', "is_fossil"]].set_index('ISIN')
+    print("previously classified ISINs by is_fossil:")
+    print(latest_cls_by_ISIN["is_fossil"].value_counts(dropna=False))
+    return latest_cls_by_sec_num, latest_cls_by_ISIN
 
 
-def add_fossil_classifications(holdings, fossil_cls):
+def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by_ISIN):
     """Add fossil classifications to a holding file
 
     :param holdings: a holding file
@@ -471,16 +493,29 @@ def add_fossil_classifications(holdings, fossil_cls):
     print("all_holdings: {}".format(len(holdings)))
     print("having holding number: {}".format(len(holdings_with_num)))
     print("without holding number: {}".format(len(holdings_no_num)))
-    # 2. add fossil classification based on security_num
+    # 2a. add fossil classification based on Israeli security num
     # clean join columns
-    holdings_with_num['מספר ני"ע'] = holdings_with_num['מספר ני"ע'].astype('str').str.strip()
-    fossil_cls.index = fossil_cls.index.astype('str').str.strip()
-    holdings_cls = holdings_with_num.merge(fossil_cls,
+    holdings_with_num['מספר ני"ע'] = holdings_with_num['מספר ני"ע'].astype('str').str.strip().str.upper()
+    fossil_cls_by_il_sec_num.index = fossil_cls_by_il_sec_num.index.astype('str').str.strip()
+    holdings_cls = holdings_with_num.merge(fossil_cls_by_il_sec_num,
                                            left_on='מספר ני"ע',
                                            right_index=True,
                                            how='left'
                                            )
-    print("Holdings by fossil classification:")
+    print("Holdings after fossil classification by Israeli security num:")
+    print(holdings_cls["is_fossil"].value_counts(dropna=False))
+    # 2b. add fossil classification based on ISIN
+    # clean join columns
+    fossil_cls_by_ISIN.index = fossil_cls_by_ISIN.index.astype('str').str.strip()
+    holdings_cls = holdings_cls.merge(fossil_cls_by_ISIN,
+                                      left_on='מספר ני"ע',
+                                      right_index=True,
+                                      how='left',
+                                      suffixes=['', '_new']
+                                      )
+    holdings_cls["is_fossil"] = holdings_cls["is_fossil"].fillna(holdings_cls["is_fossil_new"])
+    holdings_cls.drop(["is_fossil_new"], axis=1, inplace=True)
+    print("Holdings after fossil classification by ISIN:")
     print(holdings_cls["is_fossil"].value_counts(dropna=False))
     # 3. add fossil sum שווי פוסילי
     holdings_cls["שווי פוסילי"] = holdings_cls["שווי"] * holdings_cls["is_fossil"]
