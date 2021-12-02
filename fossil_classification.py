@@ -7,8 +7,10 @@ import string
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 from enrich_holdings import *
+from datetime import datetime
 from bs4 import BeautifulSoup
 import urllib.request
+from os import path, rename
 
 pd.set_option('display.max_columns', None)
 
@@ -767,7 +769,7 @@ def classify_holdings(
     # 5. add issuer and LEI for previously classified
     # to be removed - prev_class file should already have issuer_number and LEI
     prev_class = add_all_id_types_to_holdings(prev_class, tlv_s2i, isin2lei)
-    output(prev_class, "prev with added issuer and LEI.csv")
+    # output(prev_class, "prev with added issuer and LEI.csv")
     # 6. match holdings with previously classified - by ISIN, issuer or LEI
     holdings_with_prev = match_holdings_with_prev(
         holdings_enriched,
@@ -820,62 +822,38 @@ def classify_holdings(
     output(holdings_propagate_is_fossil, output_path)
     return
 
-# ***** Final Results *****
-# is_fossil coverage:
-# NaN    5949
-# 0.0    3884
-# 1.0     386
 
-# ***** Final Results *****
-# is_fossil coverage:
-# NaN    5733
-# 0.0    4081
-# 1.0     405
+def add_classifications_to_prev_class(holdings_cls_path, prev_class_path):
+    """Add the results of a classification to prev_cls for future matching
 
-# after adding issuer by ticker for TLV companies
-# ***** Final Results *****
-# is_fossil coverage:
-# NaN    5748
-# 0.0    4127
-# 1.0     405
-# bug - added duplicates
+    :param holdings_cls_path: classified holdings path, CSV file
+    :param prev_class_path: previous classifications file path, CSV file
+    :return: prev_cls with added classifications
+    """
+    holdings_cls = pd.read_csv(holdings_cls_path, dtype=str)
+    holdings_cls = holdings_cls[
+        ["שם המנפיק/שם נייר ערך", 'מספר ני"ע', 'מספר מנפיק', 'ISIN', 'מספר תאגיד', 'LEI', 'is_fossil']]
+    # add today's date to new classifications
+    holdings_cls["classification_date"] = datetime.today().strftime('%Y-%m-%d')
+    prev_class = pd.read_csv(prev_class_path, dtype=str)
+    prev_class_new = pd.concat([prev_class, holdings_cls]).sort_values("classification_date", ascending=False)
+    return prev_class_new
 
-# bug fixed:
-# is_fossil coverage:
-# NaN    5698
-# 0.0    4116
-# 1.0     405
 
-# after adding ticker match to FFF
-# is_fossil coverage:
-# NaN    5627
-# 0.0    4115
-# 1.0     477
+def update_prev_class(holdings_cls_path, prev_class_path):
+    """Update prev_class based on new holdings classifications
 
-# after adding LEI mapping to both previously classified and holdings
-# is_fossil coverage:
-# 0.0    4962
-# NaN    4681
-# 1.0     576
+    :param holdings_cls_path: classified holdings path, CSV file
+    :param prev_class_path: previous classifications file path, CSV file
+    :return: updates prev_class file, renames older one to prev_class_<current_date>.csv
+    """
+    prev_class_new = add_classifications_to_prev_class(holdings_cls_path, prev_class_path)
+    suffix = " " + datetime.today().strftime('%Y-%m-%d %H-%M-%S') + ".csv"
+    new_filename = path.dirname(prev_class_path) + "/prev_class backup/" + path.splitext(
+        path.basename(prev_class_path)
+    )[0] + suffix
+    print("Adding classifications to prev_class, saving the previous version as {}".format(new_filename))
+    rename(prev_class_path, new_filename)
+    prev_class_new.to_csv(prev_class_path, index=False)
+    return
 
-# after consolidation by LEI
-# is_fossil coverage after propagation by ISIN and LEI:
-# 0.0    5131
-# NaN    4499
-# 1.0     589
-
-# after best_match bug fix:
-# 0.0    5131
-# NaN    4484
-# 1.0     604
-# Name: is_fossil, dtype: int64
-
-# after adding non fossil companies from FFF list and better ticket matching
-# 0.0    6906
-# NaN    2722
-# 1.0     591
-
-# after better ticker and company name cleaning
-# 0.0    7072
-# NaN    2532
-# 1.0     615
