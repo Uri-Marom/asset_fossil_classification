@@ -544,3 +544,15 @@ def report_period_desc_to_date(period_desc):
         quarter_date = '12-31'
     period_date = year + "-" + quarter_date
     return period_date
+
+
+def concat_from_csv_by_path(all_holdings_path, new_holdings_path):
+    """concat two csv into DataFrame
+
+    :param all_holdings_path: all holdings path, CSV
+    :param new_holdings_path: new holdings path, CSV
+    :return: DataFrame of all holdings + new holdings
+    """
+    all_holdings = pd.read_csv(all_holdings_path, dtype=holdings_dtypes())
+    new_holdings = pd.read_csv(new_holdings_path, dtype=holdings_dtypes())
+    return pd.concat([all_holdings, new_holdings])

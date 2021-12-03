@@ -60,8 +60,8 @@ def find_id_col(df, id_type):
             max_cnt = cnt
 
     if max_cnt > 0:
-        # print("\nHolding file {} col is: {}".format(id_type, id_col))
-        # print("number of {}s: {} out of {} rows".format(id_type, max_cnt, df.shape[0]))
+        print("\nHolding file {} col is: {}".format(id_type, id_col))
+        print("number of {}s: {} out of {} rows".format(id_type, max_cnt, df.shape[0]))
         return id_col
     # else:
     #     print("\nno {}s in holdings file".format(id_type))
