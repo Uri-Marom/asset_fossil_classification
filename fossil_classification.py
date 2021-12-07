@@ -42,8 +42,26 @@ def clean_instrument_from_ticker(df, instrument_col, ticker_col):
 
 
 def clean_company(s):
-    s = str(s)
-    return re.sub(r'[\\/.%\s\d]+$', '', s)
+    s = str(s).upper()
+    # remove special characters (dot, slash, asterisk ,percentage)
+    s = re.sub(r'[\\/\\.\\%\\*\\"]+', '', s)
+    # handle strings with "-", inc, ltd etc. - if long enough remove everything afterwards
+    cut_from_list = ["-", " INC", " LTD", " CORP", " בעמ"," אגח", " PERP"]
+    cut_loc = min([s.find(c) for c in cut_from_list if s.find(c) > 0], default=-1)
+    if cut_loc > 3:
+        s = s[:cut_loc]
+    # remove everything starting with a word that repeats
+    l = s.split()
+    rep_words = [w for w in l if s.count(w) > 1]
+    if rep_words:
+        first_rep_word = rep_words[0]
+        pos = s.find(first_rep_word, s.find(first_rep_word) + 1)
+        s = s[:pos]
+    # remove non-letter characters
+    pattern = r"[^א-תA-Za-z ]"
+    s = re.sub(pattern, '', s)
+    return s.strip()
+
 
 
 def company_names_match_score(row, holdings_company_col, fff_company_col, min_len=3):
@@ -190,7 +208,7 @@ def prepare_fff(df, fossil_only=False):
 
 # TLV (TASE) companies list, maintained by Clean Money Forum
 # TODO: download file from a repository or db instead of using local
-def fetch_latest_tlv_list(tlv_path):
+def fetch_latest_tlv_list(tlv_path="data_sources/TASE companies - fossil classification.xlsx"):
     tlv = pd.read_excel(tlv_path, sheet_name=0, skiprows=range(3))
     print("\n** Fetching tlv companies fossil classification **")
     return tlv
@@ -717,7 +735,13 @@ def propagate_is_fossil(df, propagate_by_col):
     # TODO: Warning - multiple is_fossil values for the same entity
     if len(fossil_ambiguous) > 0:
         print("\nHAVING both is_fossil=0 and is_fossil=1 values within group")
-        print(fossil_ambiguous)
+        print(fossil_ambiguous[["שם המנפיק/שם נייר ערך",
+                                "is_fossil_conflict",
+                                "is_fossil",
+                                'מספר ני"ע',
+                                "מספר מנפיק",
+                                "ISIN",
+                                "LEI"]])
     # propagate mean to missing is_fossil
     prop_col_not_null['is_fossil'] = grouped_by_prop_col['is_fossil'].transform(lambda x: x.fillna(x.mean()))
     result = pd.concat([prop_col_not_null, prop_col_null])
@@ -735,7 +759,6 @@ def output(df, output_path):
 
 
 def classify_holdings(
-        tlv_path="data_sources/TASE companies - fossil classification.xlsx",
         holdings_path="data/holdings_for_classification/missing_cls.csv",
         holdings_ticker_col=None,
         holdings_company_col="שם המנפיק/שם נייר ערך",
@@ -776,7 +799,7 @@ def classify_holdings(
         prev_class,
         holdings_il_sec_num_col
     )
-    tlv = prepare_tlv(fetch_latest_tlv_list(tlv_path))
+    tlv = prepare_tlv(fetch_latest_tlv_list())
     holdings_with_tlv = match_holdings_with_tlv(holdings_with_prev, tlv)
     # 7. get Fossil Free Funds company list, transform to one row per ticker symbol
     fff_all = fetch_latest_fff_list()

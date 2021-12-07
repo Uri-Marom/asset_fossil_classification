@@ -14,6 +14,14 @@ def last_updated():
     print(".py file last modified: {}".format(datetime.fromtimestamp(last_mod_time)))
 
 
+def fetch_all_holdings_path():
+    """Returns the relative path of the all_holdings.csv file
+
+    :return: the relative path of all_holdings.csv file
+    """
+    return "data/downloaded reports/company reports/all_holdings.csv"
+
+
 def get_reports_from_response(response_directory):
     """get reports dataframe from response.json within the response directory.
     Using the http response recorded while searching for reports here:
