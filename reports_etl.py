@@ -345,7 +345,7 @@ def is_number(s):
     """checks if a string is a number
 
     :param s: string
-    :return: true if s is a float, flase otherwise
+    :return: true if s is a float, false otherwise
     """
     try:
         float(s)
@@ -404,12 +404,12 @@ def add_report_data(holdings, reports):
                    'ParentCorpName', 'ParentCorpLegalId',
                    'ProductNum', 'Name', 'ShortName',
                    'StatusDate', 'ReportPeriodDesc']
-
-    reports = reports.set_index('DocumentId')[report_cols]
-    reports.index = reports.index.astype('str')
-    reports['ParentCorpLegalId'] = reports['ParentCorpLegalId'].astype('str')
+    reports_with_doc_id = reports[reports["DocumentId"].notnull()]
+    reports_with_doc_id = reports_with_doc_id.set_index('DocumentId')[report_cols]
+    reports_with_doc_id.index = reports_with_doc_id.index.astype('str')
+    reports_with_doc_id['ParentCorpLegalId'] = reports_with_doc_id['ParentCorpLegalId'].astype('str')
     # 1. merge holdings with report data when available
-    holdings = holdings.merge(reports,
+    holdings = holdings.merge(reports_with_doc_id,
                               left_on='report_id',
                               right_index=True,
                               how='left'

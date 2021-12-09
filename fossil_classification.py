@@ -6,11 +6,11 @@ import re
 import string
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
-from enrich_holdings import *
 from datetime import datetime
 from bs4 import BeautifulSoup
 import urllib.request
 from os import path, rename
+from enrich_holdings import *
 
 pd.set_option('display.max_columns', None)
 
@@ -61,7 +61,6 @@ def clean_company(s):
     pattern = r"[^א-תA-Za-z ]"
     s = re.sub(pattern, '', s)
     return s.strip()
-
 
 
 def company_names_match_score(row, holdings_company_col, fff_company_col, min_len=3):
@@ -237,7 +236,7 @@ def prepare_tlv(tlv):
 
 # TODO: download file from a repository or db instead of using local
 def fetch_latest_prev_classified(prev_class_path="data_sources/prev_class.csv"):
-    prev_fossil_classification = pd.read_csv(prev_class_path)
+    prev_fossil_classification = pd.read_csv(prev_class_path, dtype=str)
     return prev_fossil_classification
 
 
@@ -706,11 +705,11 @@ def consolidate_is_fossil(df):
     # produces final is_fossil flag, based on all the sub flags
     is_fossil_cols = [c for c in df.columns if c.startswith("is_fossil")]
     is_fossil_il_cols = [c for c in df.columns if c.startswith("is_fossil_il")]
+    # is_fossil_il gets precedence over the other flags
+    df["is_fossil"] = df[is_fossil_il_cols].astype('float').max(axis=1)
+    df["is_fossil"] = df["is_fossil"].fillna(df[is_fossil_cols].astype('float').max(axis=1))
     # adding conflict indicator for rows with multiple fossil flags
     df["is_fossil_conflict"] = df[is_fossil_cols].mean(axis=1).between(0, 1, inclusive=False)
-    # is_fossil_il gets precedence over the other flags
-    df["is_fossil"] = df[is_fossil_il_cols].max(axis=1)
-    df["is_fossil"] = df["is_fossil"].fillna(df[is_fossil_cols].max(axis=1))
     print("\n***** Final Results before propagation *****")
     print("is_fossil coverage:")
     print(df["is_fossil"].value_counts(dropna=False))
@@ -765,17 +764,18 @@ def classify_holdings(
         sheet_num=0
 ):
     # 1. prepare holdings file for classification
-    print("\n1.Preparing holding file")
+    print("\n1. Preparing holding file")
     holdings, holdings_il_sec_num_col, holdings_il_corp_col = prepare_holdings(holdings_path, sheet_num=sheet_num)
     # If ticker exists, remove ticker information from instrument name
     if holdings_ticker_col:
         holdings = clean_instrument_from_ticker(holdings, holdings_company_col, holdings_ticker_col)
         holdings_company_col = "company_name_cut_ticker"
     # 2. prepare mapping files: TLV security number to issuer & isin to LEI for international holdings
-    print("\n2.Preparing mapping files")
+    print("\n2. Preparing mapping files")
     tlv_s2i = prepare_tlv_sec_num_to_issuer(fetch_latest_tlv_sec_num_to_issuer())
     isin2lei = fetch_latest_isin2lei()
     # 3. enrich holdings file
+    print("\n3. Enriching holding file")
     holdings_enriched = add_all_id_types_to_holdings(holdings, tlv_s2i, isin2lei)
     if holdings_ticker_col:
         holdings_enriched = add_tlv_issuer_by_ticker(
@@ -788,12 +788,11 @@ def classify_holdings(
             mapping_eng_ticker_col="סימול(אנגלית)"
         )
     # 4. prepare previously classified as is_fossil
+    print("\n4. Preparing previously classified file")
     prev_class = prepare_prev_class(fetch_latest_prev_classified())
-    # 5. add issuer and LEI for previously classified
-    # to be removed - prev_class file should already have issuer_number and LEI
     prev_class = add_all_id_types_to_holdings(prev_class, tlv_s2i, isin2lei)
-    # output(prev_class, "prev with added issuer and LEI.csv")
-    # 6. match holdings with previously classified - by ISIN, issuer or LEI
+    # 5. match holdings with previously classified - by ISIN, issuer or LEI
+    print("\n5. Matching holdings with previously classified")
     holdings_with_prev = match_holdings_with_prev(
         holdings_enriched,
         prev_class,
@@ -801,12 +800,14 @@ def classify_holdings(
     )
     tlv = prepare_tlv(fetch_latest_tlv_list())
     holdings_with_tlv = match_holdings_with_tlv(holdings_with_prev, tlv)
-    # 7. get Fossil Free Funds company list, transform to one row per ticker symbol
+    # 6. get Fossil Free Funds company list, transform to one row per ticker symbol
+    print("\n6. Preparing Fossil Free Funds company list")
     fff_all = fetch_latest_fff_list()
     fff = prepare_fff(fff_all)
-    # 8. match holdings with FFF
+    # 7. match holdings with FFF
+    print("\n7. Matchinging holdings with Fossil Free Funds company list")
     # TODO: if needed, add Ticker per holding using open FIGI API (only if company name isn't enough)
-    # 8a. match by ticker if exists
+    # 7a. match by ticker if exists
     if holdings_ticker_col:
         holdings_with_fff_by_ticker = match_holdings_with_fff_by_ticker(
             holdings_with_tlv,
@@ -817,7 +818,7 @@ def classify_holdings(
     else:
         holdings_with_fff_by_ticker = holdings_with_tlv
     # output(holdings_with_fff_by_ticker, "after_ticker_" + output_path)
-    # 8b. match by fuzzy company name
+    # 7b. match by fuzzy company name
     # prepare common words to ignore while matching
     common = get_common_words_in_company_name(
         holdings_with_fff_by_ticker,
@@ -825,6 +826,7 @@ def classify_holdings(
         holdings_company_col=holdings_company_col,
         fff_company_col="Company"
     )
+    # 7. match with Fossil Free Funds company list
     holdings_with_fff_by_company_name = match_holdings_with_fff_by_company_name(
         holdings_with_fff_by_ticker,
         fff,
@@ -834,11 +836,14 @@ def classify_holdings(
     )
     # TODO: inner matching - consolidate to issuer based on ISIN
     # (doable in the US - without the last characters, check about the others)
-    # 9. calculate is_fossil (if any of the is_fossil_* flags exists, take it)
+    # 8. calculate is_fossil (if any of the is_fossil_* flags exists, take it)
+    print("\n8. Calculating is_fossil")
     holdings_final = consolidate_is_fossil(holdings_with_fff_by_company_name)
     # output(holdings_final, "debug_" + output_path)
-    # 10. propagate is_fossil across ISIN and LEI (fill in missing is_fossil according to existing ones within group)
+    # 9. propagate is_fossil across ISIN and LEI (fill in missing is_fossil according to existing ones within group)
+    print("\n9. Propagating is_fossil across il_sec_num, ISIN and LEI")
     holdings_propagate_is_fossil = propagate_is_fossil(holdings_final, holdings_il_sec_num_col)
+    holdings_propagate_is_fossil = propagate_is_fossil(holdings_propagate_is_fossil, "ISIN")
     holdings_propagate_is_fossil = propagate_is_fossil(holdings_propagate_is_fossil, "LEI")
     # output path = input path with 'with fossil classification' added
     output_path = ''.join(holdings_path.split('.')[:-1]) + ' with fossil classification.' + holdings_path.split('.')[-1]

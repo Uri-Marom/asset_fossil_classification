@@ -18,6 +18,46 @@ def any_heb_char(s):
     return any("\u0590" <= c <= "\u05EA" for c in s)
 
 
+def is_number(s):
+    """checks if a string is a number
+
+    :param s: string
+    :return: true if s is a float, false otherwise
+    """
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
+def is_il_holding(row):
+    """a row level function, true if row is an Israeli holding based on security number and security name
+
+    :param row: holding row
+    :return: True if holding is Israeli holding, False else
+    """
+    sec_name = str(row["שם המנפיק/שם נייר ערך"]).upper().strip()
+    sec_num = str(row['מספר ני"ע']).upper().strip()
+    heb_char = any_heb_char(sec_name)
+    numeric_sec_num = is_number(sec_num)
+    sec_num_il_isin = sec_num.startswith("IL")
+    if ("ISIN" in row) & (row["ISIN"] is not None):
+        sec_ISIN = row["ISIN"].upper().strip()
+        sec_ISIN_il = sec_ISIN.startswith("IL")
+        sec_num_il_isin = sec_num_il_isin | sec_ISIN_il
+    return heb_char | numeric_sec_num | sec_num_il_isin
+
+
+def bogus_issuer_numbers():
+    """ a list of bogus issuer numbers, to be removed from any holding file
+
+    :return: a list of bogus issuer numbers
+    """
+    bogus_issuer_nums = ["993", "994", "995"]
+    return bogus_issuer_nums
+
+
 def id_col_types():
     """
     returns all available id column types
@@ -42,8 +82,8 @@ def id_col_patterns(id_type):
 
 
 def find_id_col(df, id_type):
-    """
-    Automatically identify columns with the chosen id_type
+    """Automatically identify columns with the chosen id_type
+
     :param df: DataFrame
     :param id_type: str, one of the following: ISIN, LEI, il_corp_num
     :return: id_col: string
@@ -54,17 +94,18 @@ def find_id_col(df, id_type):
     pattern = id_col_patterns(id_type)
     max_cnt = 0
     for col in df:
-        cnt = sum(df[col].astype(str).str.strip().str.contains(pattern, na=False))
-        if cnt > max_cnt:
-            id_col = col
-            max_cnt = cnt
-
+        # disregard ParentCorpId column
+        if col not in ["ParentCorpLegalId"]:
+            cnt = sum(df[col].astype(str).str.strip().str.contains(pattern, na=False))
+            if cnt > max_cnt:
+                id_col = col
+                max_cnt = cnt
     if max_cnt > 0:
         print("\nHolding file {} col is: {}".format(id_type, id_col))
         print("number of {}s: {} out of {} rows".format(id_type, max_cnt, df.shape[0]))
         return id_col
-    # else:
-    #     print("\nno {}s in holdings file".format(id_type))
+    else:
+        print("\nno {}s in holdings file".format(id_type))
 
 
 def find_id_cols(df):
@@ -80,6 +121,11 @@ def find_id_cols(df):
 
 
 def fix_id_cols(df):
+    """Fix all ID columns for a DataFrame
+
+    :param df: holdings DataFrame
+    :return: holdings DataFrame with fixed ID columns
+    """
     id_cols = find_id_cols(df)
     # add columns if needed
     for id_type in id_col_types():
@@ -94,6 +140,13 @@ def fix_id_cols(df):
             # clean id cols
             df[id_cols[id_type]] = id_col_clean(df[id_cols[id_type]])
             df[id_type] = id_col_clean(df[id_type])
+    if "מספר מנפיק" in df.columns:
+        # remove il_issuer_number for non Israeli holdings
+        df_il_mask = df.apply(is_il_holding, axis='columns')
+        df.loc[~df_il_mask, "מספר מנפיק"] = None
+        # remove bogus issuer_number for all holdings
+        df.loc[df["מספר מנפיק"].isin(bogus_issuer_numbers()), "מספר מנפיק"] = None
+        df["מספר מנפיק"] = id_col_clean(df["מספר מנפיק"])
     return df
 
 
