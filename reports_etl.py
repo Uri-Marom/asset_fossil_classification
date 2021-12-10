@@ -22,6 +22,14 @@ def fetch_all_holdings_path():
     return "data/downloaded reports/company reports/all_holdings.csv"
 
 
+def fetch_all_company_holdings_cls_path():
+    """Returns the relative path of the all_company_holdings_cls file
+
+    :return: the relative path of all_company_holdings_cls file
+    """
+    return "data/all_company_holdings_cls"
+
+
 def get_reports_from_response(response_directory):
     """get reports dataframe from response.json within the response directory.
     Using the http response recorded while searching for reports here:

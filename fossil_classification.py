@@ -15,6 +15,20 @@ from enrich_holdings import *
 pd.set_option('display.max_columns', None)
 
 
+def get_non_fossil_holding_types():
+    """get all non fossil holding types, e.g. cash holdings
+
+    :return: a list of non fossil holdings types
+    """
+    non_fossil_holding_types = [
+        'לא סחיר - תעודות התחייבות ממשלתי',
+        'מזומנים',
+        'פקדונות מעל 3 חודשים',
+        'תעודות התחייבות ממשלתיות'
+    ]
+    return non_fossil_holding_types
+
+
 def clean_ticker(s):
     s = str(s)
     # remove trailing digits
@@ -46,7 +60,7 @@ def clean_company(s):
     # remove special characters (dot, slash, asterisk ,percentage)
     s = re.sub(r'[\\/\\.\\%\\*\\"]+', '', s)
     # handle strings with "-", inc, ltd etc. - if long enough remove everything afterwards
-    cut_from_list = ["-", " INC", " LTD", " CORP", " בעמ"," אגח", " PERP"]
+    cut_from_list = ["-", " INC", " LTD", " CORP", " בעמ", " אגח", " PERP"]
     cut_loc = min([s.find(c) for c in cut_from_list if s.find(c) > 0], default=-1)
     if cut_loc > 3:
         s = s[:cut_loc]
@@ -708,11 +722,21 @@ def consolidate_is_fossil(df):
     # is_fossil_il gets precedence over the other flags
     df["is_fossil"] = df[is_fossil_il_cols].astype('float').max(axis=1)
     df["is_fossil"] = df["is_fossil"].fillna(df[is_fossil_cols].astype('float').max(axis=1))
-    # adding conflict indicator for rows with multiple fossil flags
-    df["is_fossil_conflict"] = df[is_fossil_cols].mean(axis=1).between(0, 1, inclusive=False)
     print("\n***** Final Results before propagation *****")
     print("is_fossil coverage:")
     print(df["is_fossil"].value_counts(dropna=False))
+    return df
+
+
+def add_is_fossil_conflict(df):
+    """Add is_fossil_conflict for a given DataFrame, defined as True iff there's a conflict between the is_fossil columns
+
+    :param df: a holdings DataFrame with is_fossil_... columns
+    :return: df with added is_fossil_conflict column
+    """
+    is_fossil_cols = [c for c in df.columns if c.startswith("is_fossil")]
+    # adding conflict indicator for rows with multiple fossil flags
+    df["is_fossil_conflict"] = df[is_fossil_cols].mean(axis=1).between(0, 1, inclusive=False)
     return df
 
 
@@ -845,6 +869,7 @@ def classify_holdings(
     holdings_propagate_is_fossil = propagate_is_fossil(holdings_final, holdings_il_sec_num_col)
     holdings_propagate_is_fossil = propagate_is_fossil(holdings_propagate_is_fossil, "ISIN")
     holdings_propagate_is_fossil = propagate_is_fossil(holdings_propagate_is_fossil, "LEI")
+    holdings_propagate_is_fossil = add_is_fossil_conflict(holdings_propagate_is_fossil)
     # output path = input path with 'with fossil classification' added
     output_path = ''.join(holdings_path.split('.')[:-1]) + ' with fossil classification.' + holdings_path.split('.')[-1]
     output(holdings_propagate_is_fossil, output_path)
@@ -869,6 +894,7 @@ def add_classifications_to_prev_class(holdings_cls_path, prev_class_path):
 
 
 def update_prev_class(holdings_cls_path, prev_class_path):
+    # TODO: change to update_with_backup and use for other important files as well. backup to one central directory.
     """Update prev_class based on new holdings classifications
 
     :param holdings_cls_path: classified holdings path, CSV file
@@ -884,4 +910,3 @@ def update_prev_class(holdings_cls_path, prev_class_path):
     rename(prev_class_path, new_filename)
     prev_class_new.to_csv(prev_class_path, index=False)
     return
-
