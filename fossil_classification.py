@@ -305,40 +305,6 @@ def prepare_holdings(holdings_path, sheet_num):
     return holdings, isin_col, il_corp_col
 
 
-def fetch_latest_tlv_sec_num_to_issuer():
-    # TODO: scrape from webpage
-    #  "https://info.tase.co.il/_layouts/Tase/ManagementPages/Export.aspx?sn=none&GridId=106&AddCol=1&Lang=he-IL&CurGuid={6B3A2B75-39E1-4980-BE3E-43893A21DB05}&ExportType=3"
-    df = pd.read_csv("data_sources/TASE mapping.csv",
-                     encoding="ISO-8859-8",
-                     skiprows=3,
-                     dtype=str
-                     )
-    # print("TLV sec num to issuer columns: {}".format(df.columns))
-    return df
-
-
-def fetch_latest_isin2lei(isin2lei_path="data_sources/ISIN_LEI.csv"):
-    # TODO: Fetch automatically from website
-    # https://www.gleif.org/en/lei-data/lei-mapping/download-isin-to-lei-relationship-files
-    isin2lei = pd.read_csv(isin2lei_path)
-    return isin2lei
-
-
-def prepare_tlv_sec_num_to_issuer(tlv_s2i):
-    tlv_s2i.columns = tlv_s2i.columns.str.strip()
-    tlv_s2i["ISIN"] = id_col_clean(tlv_s2i["ISIN"])
-    # handle Hebrew version
-    if """מס' ני"ע""" in tlv_s2i.columns:
-        tlv_s2i['מספר ני"ע'] = id_col_clean(tlv_s2i["""מס' ני"ע"""])
-        tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["מספר מנפיק"])
-        tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["מספר תאגיד"])
-    elif "Security Number" in tlv_s2i.columns:
-        tlv_s2i['מספר ני"ע'] = id_col_clean(tlv_s2i["Security Number"])
-        tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["Issuer No"])
-        tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["Corporate No"])
-    return tlv_s2i
-
-
 def choose_best_issuer_num(row):
     if not row["מספר מנפיק"]:
         return row["מספר מנפיק_x"]
@@ -740,33 +706,58 @@ def add_is_fossil_conflict(df):
     return df
 
 
-# propagate is_fossil across same identity (ISIN, LEI)
+def find_is_fossil_conflicts_by_id_type(df, id_type):
+    """Find all is_fossil conflicts in a holdings DataFrame, grouped by id_col
+
+    :param df: holdings DataFrame
+    :param id_type: id type to be grouped by while searching for conflicts
+    :return: a DataFrame of conflicts
+    """
+    # ignore matches within ignored holding_type per id_type
+    df = df[~df["holding_type"].isin(ignore_id_types_holding_type()[id_type])]
+    grouped_by_id_type = df.sort_values(id_type).groupby(id_type, dropna=True)
+    fossil_ambiguous = grouped_by_id_type.filter(lambda x: 0 < x["is_fossil"].mean() < 1).reset_index()
+    if len(fossil_ambiguous) > 0:
+        fossil_ambiguous["group type"] = id_type
+        fossil_ambiguous["group"] = fossil_ambiguous[id_type]
+        fossil_ambiguous["clean name"] = fossil_ambiguous["שם המנפיק/שם נייר ערך"].apply(clean_company)
+        fossil_ambiguous = fossil_ambiguous[
+            ["group type", "group", "clean name", "is_fossil"]
+        ].drop_duplicates()
+    else:
+        fossil_ambiguous = pd.DataFrame()
+    return fossil_ambiguous
+
+
 def propagate_is_fossil(df, propagate_by_col):
+    """propagate is_fossil across same identity (ISIN, LEI, Israeli corporate number etc.)
+
+    :param df: holdings df with propagate_by_col and "is_fossil" column to propagate
+    :param propagate_by_col: column to propagate by
+    :return: holdings df with is_fossil filled by propagation when applicable
+    """
     # use freshly classified holdings to classify others with similar ISINs or LEIs
     print("\nPropagating by {}".format(propagate_by_col))
     df = df.reset_index(drop=True)
-    prop_col_null = df[df[propagate_by_col].isnull()]
-    prop_col_not_null = df[df[propagate_by_col].notnull()]
+    propagate_by_col_cond = (
+            (df[propagate_by_col].notnull()) &
+            # ignore Israeli sec num for holding types where it should be ignored
+            (~df["holding_type"].isin(ignore_id_types_holding_type()[propagate_by_col]))
+    )
+    prop_col_not_null = df[propagate_by_col_cond]
+    prop_col_null = df[~propagate_by_col_cond]
     grouped_by_prop_col = prop_col_not_null.sort_values(propagate_by_col).groupby(propagate_by_col)
     # HAVING different is_fossil values, including nulls
     # fossil_partially_missing = grouped_by_prop_col.filter(lambda x: x["is_fossil"].nunique(dropna=False) > 1)
     # if len(fossil_partially_missing) >0:
     #     print("\nHAVING different is_fossil values within group, including nulls (partially missing classification)")
     #     print(grouped_by_prop_col.filter(lambda x: x["is_fossil"].nunique(dropna=False) > 1))
-    # HAVING both is_fossil=0 and is_fossil=1 values
-    fossil_ambiguous = grouped_by_prop_col.filter(lambda x: 0 < x["is_fossil"].mean() < 1)
-    # TODO: Warning - multiple is_fossil values for the same entity
-    if len(fossil_ambiguous) > 0:
-        print("\nHAVING both is_fossil=0 and is_fossil=1 values within group")
-        print(fossil_ambiguous[["שם המנפיק/שם נייר ערך",
-                                "is_fossil_conflict",
-                                "is_fossil",
-                                'מספר ני"ע',
-                                "מספר מנפיק",
-                                "ISIN",
-                                "LEI"]])
-    # propagate mean to missing is_fossil
-    prop_col_not_null['is_fossil'] = grouped_by_prop_col['is_fossil'].transform(lambda x: x.fillna(x.mean()))
+
+    # deal with holdings HAVING both is_fossil=0 and is_fossil=1 values for the same group
+    # # TODO: Warning - multiple is_fossil values for the same entity
+    # propagate mean to missing is_fossil when there's no conflict in is_fossil within group
+    prop_col_not_null['is_fossil'] = grouped_by_prop_col['is_fossil'].transform(
+        lambda x: x.fillna(x.mean()) if x.mean() in [0, 1] else x)
     result = pd.concat([prop_col_not_null, prop_col_null])
     print("\nis_fossil coverage before propagation by {}:".format(propagate_by_col))
     print(df["is_fossil"].value_counts(dropna=False))

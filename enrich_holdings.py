@@ -150,6 +150,55 @@ def fix_id_cols(df):
     return df
 
 
+def ignore_id_types_holding_type():
+    """Returns a dict of holding_type where id_type should be ignored per id_type
+
+    :return: dict of id_type:[holding_types]
+    """
+    ignore_ids_at_holding_types = {
+        'מספר ני"ע': ["הלוואות"],
+        'ISIN': [],
+        'מספר מנפיק': ["קרנות סל", "קרנות נאמנות"],
+        'מספר תאגיד': ["קרנות סל", "קרנות נאמנות"],
+        'LEI': ["קרנות סל", "קרנות נאמנות"],
+    }
+    return ignore_ids_at_holding_types
+
+
+def fetch_latest_tlv_sec_num_to_issuer():
+    # TODO: scrape from webpage
+    #  "https://info.tase.co.il/_layouts/Tase/ManagementPages/Export.aspx?sn=none&GridId=106&AddCol=1&Lang=he-IL&CurGuid={6B3A2B75-39E1-4980-BE3E-43893A21DB05}&ExportType=3"
+    df = pd.read_csv("data_sources/TASE mapping.csv",
+                     encoding="ISO-8859-8",
+                     skiprows=3,
+                     dtype=str
+                     )
+    # print("TLV sec num to issuer columns: {}".format(df.columns))
+    return df
+
+
+def fetch_latest_isin2lei(isin2lei_path="data_sources/ISIN_LEI.csv"):
+    # TODO: Fetch automatically from website
+    # https://www.gleif.org/en/lei-data/lei-mapping/download-isin-to-lei-relationship-files
+    isin2lei = pd.read_csv(isin2lei_path)
+    return isin2lei
+
+
+def prepare_tlv_sec_num_to_issuer(tlv_s2i):
+    tlv_s2i.columns = tlv_s2i.columns.str.strip()
+    tlv_s2i["ISIN"] = id_col_clean(tlv_s2i["ISIN"])
+    # handle Hebrew version
+    if """מס' ני"ע""" in tlv_s2i.columns:
+        tlv_s2i['מספר ני"ע'] = id_col_clean(tlv_s2i["""מס' ני"ע"""])
+        tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["מספר מנפיק"])
+        tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["מספר תאגיד"])
+    elif "Security Number" in tlv_s2i.columns:
+        tlv_s2i['מספר ני"ע'] = id_col_clean(tlv_s2i["Security Number"])
+        tlv_s2i["מספר מנפיק"] = id_col_clean(tlv_s2i["Issuer No"])
+        tlv_s2i["מספר תאגיד"] = id_col_clean(tlv_s2i["Corporate No"])
+    return tlv_s2i
+
+
 def prepare_mapping(mapping, by_id_type, add_id_type):
     """Prepare mapping DataFrame to be used for adding add_id_type by by_id_type to another DataFrame
 
@@ -217,4 +266,29 @@ def add_all_id_types_to_holdings(holdings, tlv_s2i, isin2lei):
     holdings = add_id_by_another_id_mapping(holdings, add_id_type="מספר מנפיק", by_id_type='מספר ני"ע', mapping=tlv_s2i)
     holdings = add_id_by_another_id_mapping(holdings, add_id_type="מספר מנפיק", by_id_type='ISIN', mapping=tlv_s2i)
     holdings = add_id_by_another_id_mapping(holdings, add_id_type="LEI", by_id_type='ISIN', mapping=isin2lei)
+    return holdings
+
+
+def load_mappings_and_add_ids_to_holdings(holdings):
+    """load needed id mappings and add ids to holdings DataFrame
+
+    :param holdings: Dataframe
+    :return: holdings with added id columns
+    """
+    tlv_s2i = prepare_tlv_sec_num_to_issuer(fetch_latest_tlv_sec_num_to_issuer())
+    isin2lei = fetch_latest_isin2lei()
+    # adding "I_" to ParentCorpLegalId to avoid confusion with il_corp_num
+    holdings["ParentCorpLegalId"] = "I_" + holdings["ParentCorpLegalId"]
+    # enrich holdings file - fix IDs
+    holdings = add_all_id_types_to_holdings(holdings, tlv_s2i, isin2lei)
+    return holdings
+
+
+def add_fossil_sum(holdings):
+    """ add fossil_sum to holdings DataFrame
+
+    :param holdings: holdings DataFrame with is_fossil and sum columns
+    :return: holdings with fossil_sum
+    """
+    holdings["שווי פוסילי"] = holdings["is_fossil"] * holdings["שווי"]
     return holdings

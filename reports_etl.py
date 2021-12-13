@@ -6,6 +6,7 @@ from os import listdir
 from os.path import isfile, join, getmtime
 import re
 from pathlib import Path
+from enrich_holdings import *
 
 
 def last_updated():
@@ -335,6 +336,9 @@ def no_holding_num_types():
     return ['זכויות מקרקעין', 'השקעה בחברות מוחזקות', 'השקעות אחרות']
 
 
+
+
+
 def holdings_dtypes():
     """Return holdings dtypes
 
@@ -343,6 +347,9 @@ def holdings_dtypes():
     return {
         'מספר ני"ע': str,
         'מספר מנפיק': str,
+        'מספר תאגיד': str,
+        'ISIN': str,
+        'LEI': str,
         'report_id': str,
         'ParentCorpLegalId': str,
         'ProductNum': str
@@ -500,12 +507,18 @@ def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by
     """Add fossil classifications to a holding file
 
     :param holdings: a holding file
-    :param fossil_cls: fossil classification, one row per security_num
+    :param fossil_cls_by_il_sec_num: fossil classification, one row per security_num
+    :param fossil_cls_by_ISIN: fossil classification, one row per ISIN
     :return: holding file with added classification and fossil sum columns
     """
     # 1. separate holdings with no holding number
-    holdings_with_num = holdings[holdings['מספר ני"ע'].notnull()]
-    holdings_no_num = holdings[holdings['מספר ני"ע'].isnull()]
+    link_by_sec_num = (
+            (holdings['מספר ני"ע'].notnull()) &
+            # ignore Israeli sec num for holding types where it should be ignored
+            (~holdings["holding_type"].isin(ignore_id_types_holding_type()['מספר ני"ע']))
+    )
+    holdings_with_num = holdings[link_by_sec_num]
+    holdings_no_num = holdings[~link_by_sec_num]
     print("all_holdings: {}".format(len(holdings)))
     print("having holding number: {}".format(len(holdings_with_num)))
     print("without holding number: {}".format(len(holdings_no_num)))
@@ -534,7 +547,7 @@ def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by
     print("Holdings after fossil classification by ISIN:")
     print(holdings_cls["is_fossil"].value_counts(dropna=False))
     # 3. add fossil sum שווי פוסילי
-    holdings_cls["שווי פוסילי"] = holdings_cls["שווי"] * holdings_cls["is_fossil"]
+    holdings_cls = add_fossil_sum(holdings_cls)
     print("total fossil sum: {}".format(holdings_cls["שווי פוסילי"].sum()))
     holdings_cls = pd.concat([holdings_cls, holdings_no_num])
     print("holdings count before classification: {}".format(len(holdings)))
