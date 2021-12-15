@@ -1,6 +1,6 @@
 # enrich_holdings.py
 import pandas as pd
-
+import re
 
 # Auxiliary functions
 def id_col_clean(col):
@@ -10,6 +10,28 @@ def id_col_clean(col):
         lambda x: None if (x == '0') | (x == 'NAN') | (x == 'NONE') | (x == '') else x
     )
     return new_col
+
+
+def clean_company(s):
+    s = str(s).upper()
+    # remove special characters (dot, slash, asterisk ,percentage)
+    s = re.sub(r'[\\/\\.\\%\\*\\"]+', '', s)
+    # handle strings with "-", inc, ltd etc. - if long enough remove everything afterwards
+    cut_from_list = ["-", " INC", " LTD", " CORP", " בעמ", " אגח", " PERP"]
+    cut_loc = min([s.find(c) for c in cut_from_list if s.find(c) > 0], default=-1)
+    if cut_loc > 3:
+        s = s[:cut_loc]
+    # remove everything starting with a word that repeats
+    l = s.split()
+    rep_words = [w for w in l if s.count(w) > 1]
+    if rep_words:
+        first_rep_word = rep_words[0]
+        pos = s.find(first_rep_word, s.find(first_rep_word) + 1)
+        s = s[:pos]
+    # remove non-letter characters
+    pattern = r"[^א-תA-Za-z ]"
+    s = re.sub(pattern, '', s)
+    return s.strip()
 
 
 def any_heb_char(s):
@@ -163,6 +185,40 @@ def ignore_id_types_holding_type():
         'LEI': ["קרנות סל", "קרנות נאמנות"],
     }
     return ignore_ids_at_holding_types
+
+
+def get_non_fossil_holding_types():
+    """get all non fossil holding types, e.g. cash holdings
+
+    :return: a list of non fossil holdings types
+    """
+    non_fossil_holding_types = [
+        'לא סחיר - תעודות התחייבות ממשלתי',
+        'מזומנים',
+        'פקדונות מעל 3 חודשים',
+        'תעודות התחייבות ממשלתיות'
+    ]
+    return non_fossil_holding_types
+
+
+def report_period_desc_to_date(period_desc):
+    """translates report period desc (Hebrew text) to date
+
+    :param period_desc: report period desc (Hebrew text)
+    :return: report period as date
+    """
+    year = period_desc[0:4]
+    quarter = period_desc[5:]
+    if quarter == 'רבעון 1':
+        quarter_date = '03-31'
+    elif quarter == 'רבעון 2':
+        quarter_date = '06-30'
+    elif quarter == 'רבעון 3':
+        quarter_date = '09-30'
+    elif quarter == 'רבעון 4':
+        quarter_date = '12-31'
+    period_date = year + "-" + quarter_date
+    return period_date
 
 
 def fetch_latest_tlv_sec_num_to_issuer():

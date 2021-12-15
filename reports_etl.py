@@ -197,13 +197,18 @@ def pre_process_reports(reports_fn_list):
     # 1. count sheet names across files, fix them
     sheet_names = {}
     for fn in reports_fn_list:
-        report = pd.read_excel(fn, sheet_name=None, header=None)
-        for k in report.keys():
-            k = fix_sheet_name(k)  # following analysis of raw results
-            if k in sheet_names:
-                sheet_names[k] += 1
-            else:
-                sheet_names[k] = 1
+        print("Processing report: {}".format(fn), end="\r")
+        try:
+            report = pd.read_excel(fn, sheet_name=None, header=None)
+            for k in report.keys():
+                k = fix_sheet_name(k)  # following analysis of raw results
+                if k in sheet_names:
+                    sheet_names[k] += 1
+                else:
+                    sheet_names[k] = 1
+        except:
+            print("Something went wrong with report: {}".format(fn))
+            reports_fn_list = [r for r in reports_fn_list if r != fn]
     print(sheet_names)
     # 2. count column names per sheet name
     column_names = {}
@@ -271,19 +276,24 @@ def process_summary_sheets(reports_fn_list):
     rep_num = 1
     for fn in reports_fn_list:
         print("Processing report {} out of {}".format(rep_num, list_len), end="\r")
-        sheet = pd.read_excel(fn, sheet_name="סכום נכסי הקרן", header=None)
-        asset_alloc = get_asset_allocation_from_summary_sheet(sheet)
-        if not asset_alloc.empty:
-            # add report_id
-            report_id = Path(fn).stem
-            asset_alloc["report_id"] = report_id
-            rep_num += 1
-            all_summary_sheets_list.append(asset_alloc)
+        try:
+            sheet = pd.read_excel(fn, sheet_name="סכום נכסי הקרן", header=None)
+            asset_alloc = get_asset_allocation_from_summary_sheet(sheet)
+            if not asset_alloc.empty:
+                # add report_id
+                report_id = Path(fn).stem
+                asset_alloc["report_id"] = report_id
+                rep_num += 1
+                all_summary_sheets_list.append(asset_alloc)
+        except:
+            print("Something went wrong with report: {}".format(fn))
+            reports_fn_list = [r for r in reports_fn_list if r != fn]
     # moving concat out of the loop - better performance
     all_summary_sheets = pd.concat(all_summary_sheets_list, axis=0, ignore_index=True)
     all_summary_sheets = all_summary_sheets[all_summary_sheets["asset"].notnull()]
-    all_summary_sheets["pct_num"] = all_summary_sheets["pct"].astype(str).str.replace(r'\%', '').astype(float)
-    all_summary_sheets["sum_num"] = all_summary_sheets["sum"].astype(float)
+    all_summary_sheets["pct_num"] = all_summary_sheets["pct"].astype(str).str.replace(r'[\%\s-]', '')
+    all_summary_sheets["pct_num"] = pd.to_numeric(all_summary_sheets["pct_num"], errors='ignore')
+    all_summary_sheets["sum_num"] = pd.to_numeric(all_summary_sheets["sum"], errors='ignore')
     return all_summary_sheets
 
 
@@ -309,20 +319,23 @@ def extract_holdings(reports_fn_list):
     rep_num = 1
     for fn in reports_fn_list:
         print("Processing report {} out of {}".format(rep_num, list_len), end="\r")
-        report = pd.read_excel(fn, sheet_name=None, header=None)
-        # add report_id
-        report_id = Path(fn).stem
-        for sheet_name in ignore_sheets(report):
-            fixed_sheet_name = fix_sheet_name(sheet_name)
-            sheet = clean_sheet(report[sheet_name])
-            if not sheet.empty:
-                sheet_df = sheet
-                sheet_df["report_id"] = report_id
-                # add holding_type column
-                sheet_df["holding_type"] = fixed_sheet_name
-                all_holdings_list.append(sheet_df)
-        rep_num += 1
-
+        try:
+            report = pd.read_excel(fn, sheet_name=None, header=None)
+            # add report_id
+            report_id = Path(fn).stem
+            for sheet_name in ignore_sheets(report):
+                fixed_sheet_name = fix_sheet_name(sheet_name)
+                sheet = clean_sheet(report[sheet_name])
+                if not sheet.empty:
+                    sheet_df = sheet
+                    sheet_df["report_id"] = report_id
+                    # add holding_type column
+                    sheet_df["holding_type"] = fixed_sheet_name
+                    all_holdings_list.append(sheet_df)
+            rep_num += 1
+        except:
+            print("Something went wrong with report: {}".format(fn))
+            reports_fn_list = [r for r in reports_fn_list if r != fn]
     all_holdings = pd.concat(all_holdings_list, axis=0, ignore_index=True)
     all_holdings["report_id"] = all_holdings["report_id"].astype(str)
     return all_holdings
@@ -553,26 +566,6 @@ def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by
     print("holdings count before classification: {}".format(len(holdings)))
     print("holdings count after classification: {}".format(len(holdings_cls)))
     return holdings_cls
-
-
-def report_period_desc_to_date(period_desc):
-    """translates report period desc (Hebrew text) to date
-
-    :param period_desc: report period desc (Hebrew text)
-    :return: report period as date
-    """
-    year = period_desc[0:4]
-    quarter = period_desc[5:]
-    if quarter == 'רבעון 1':
-        quarter_date = '03-31'
-    elif quarter == 'רבעון 2':
-        quarter_date = '06-30'
-    elif quarter == 'רבעון 3':
-        quarter_date = '09-30'
-    elif quarter == 'רבעון 4':
-        quarter_date = '12-31'
-    period_date = year + "-" + quarter_date
-    return period_date
 
 
 def concat_from_csv_by_path(all_holdings_path, new_holdings_path):

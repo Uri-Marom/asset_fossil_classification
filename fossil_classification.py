@@ -15,20 +15,6 @@ from enrich_holdings import *
 pd.set_option('display.max_columns', None)
 
 
-def get_non_fossil_holding_types():
-    """get all non fossil holding types, e.g. cash holdings
-
-    :return: a list of non fossil holdings types
-    """
-    non_fossil_holding_types = [
-        'לא סחיר - תעודות התחייבות ממשלתי',
-        'מזומנים',
-        'פקדונות מעל 3 חודשים',
-        'תעודות התחייבות ממשלתיות'
-    ]
-    return non_fossil_holding_types
-
-
 def clean_ticker(s):
     s = str(s)
     # remove trailing digits
@@ -53,28 +39,6 @@ def clean_instrument_from_ticker(df, instrument_col, ticker_col):
         else row[instrument_col],
         axis=1)
     return instruments.drop(["instrument_word_list", "ticker_first", "ticker_in_name"], axis=1)
-
-
-def clean_company(s):
-    s = str(s).upper()
-    # remove special characters (dot, slash, asterisk ,percentage)
-    s = re.sub(r'[\\/\\.\\%\\*\\"]+', '', s)
-    # handle strings with "-", inc, ltd etc. - if long enough remove everything afterwards
-    cut_from_list = ["-", " INC", " LTD", " CORP", " בעמ", " אגח", " PERP"]
-    cut_loc = min([s.find(c) for c in cut_from_list if s.find(c) > 0], default=-1)
-    if cut_loc > 3:
-        s = s[:cut_loc]
-    # remove everything starting with a word that repeats
-    l = s.split()
-    rep_words = [w for w in l if s.count(w) > 1]
-    if rep_words:
-        first_rep_word = rep_words[0]
-        pos = s.find(first_rep_word, s.find(first_rep_word) + 1)
-        s = s[:pos]
-    # remove non-letter characters
-    pattern = r"[^א-תA-Za-z ]"
-    s = re.sub(pattern, '', s)
-    return s.strip()
 
 
 def company_names_match_score(row, holdings_company_col, fff_company_col, min_len=3):
