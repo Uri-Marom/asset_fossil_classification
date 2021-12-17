@@ -101,6 +101,42 @@ def filter_major_companies(holdings):
     return filtered
 
 
+def update_system_owners(holdings, system, former_owner, new_owner):
+    """Update holdings DataFrame - change owner from former_owner to new_owner for [former_owner, system]
+
+    :param holdings: holdings DataFrame
+    :param system: SystemName, either of: גמל, ביטוח, פנסיה
+    :param former_owner: former ParentCorpGroup
+    :param new_owner: new ParentCorpGroup
+    :return: holdings DataFrame after ownership update
+    """
+    merger_mask = (holdings["ParentCorpGroup"] == former_owner) & (holdings["SystemName"] == system)
+    merger_sum = holdings.loc[merger_mask, "שווי"].sum()
+    print("moving {:,} from {} {} to {} {}".format(merger_sum, former_owner, system, new_owner, system))
+    holdings.loc[merger_mask, "ParentCorpGroup"] = new_owner
+    return holdings
+
+
+def get_midrag_agg_from_company_system_holding_type_stats(stats):
+    cols = {
+        "ReportPeriodDate": "תאריך",
+        "ParentCorpGroup": "גוף",
+        "SystemName": "אפיק",
+        "holding_type": "סוג החזקה",
+        "שווי במניות ואגח קונצרני סחירים": "שווי",
+        "שווי פוסילי במניות ואגח קונצרני סחירים": "שווי פוסילי",
+        "שיעור פוסילי במניות ואגח קונצרני סחירים": "שיעור פוסילי"
+    }
+    midrag_agg = stats[
+        stats["holding_type"].isin(['אג"ח קונצרני', 'מניות'])
+    ][cols.keys()]
+    midrag_agg.rename(cols, axis=1, inplace=True)
+    midrag_agg = midrag_agg[
+        midrag_agg["תאריך"] == midrag_agg["תאריך"].max()
+    ].drop("תאריך", axis=1)
+    return midrag_agg
+
+
 def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions):
     """group fossil holdings for given quarters and institutions, to reflect held companies
 
@@ -121,7 +157,7 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
     # 1. Handle Israeli holdings
     # 1a. group by Israeli security number
     il_fossil_holdings = fossil_holdings.groupby(
-        ["ParentCorpGroup", "ReportPeriodDate", 'מספר ני"ע'])
+        ["ParentCorpGroup", "ReportPeriodDesc", 'מספר ני"ע'])
     il_fossil_holdings_agg = il_fossil_holdings.agg(
         name=pd.NamedAgg(column="שם המנפיק/שם נייר ערך", aggfunc="first"),
         issuer_num=pd.NamedAgg(column="מספר מנפיק", aggfunc="first"),
@@ -136,7 +172,7 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
     il_fossil_holdings_agg["issuer_num"] = il_fossil_holdings_agg["issuer_num"].fillna(
         il_fossil_holdings_agg['מספר ני"ע'])
     # 1b. group by Israeli issuer number
-    il_fossil_holdings_by_issuer = il_fossil_holdings_agg.groupby(["ParentCorpGroup", "ReportPeriodDate", 'issuer_num'])
+    il_fossil_holdings_by_issuer = il_fossil_holdings_agg.groupby(["ParentCorpGroup", "ReportPeriodDesc", 'issuer_num'])
     il_fossil_holdings_by_issuer_agg = il_fossil_holdings_by_issuer.agg(
         name=pd.NamedAgg(column="name", aggfunc="first"),
         fossil_sum=pd.NamedAgg(column="fossil_sum", aggfunc="sum"),
@@ -147,7 +183,7 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
         fossil_holdings[fossil_holdings['מספר ני"ע'].notnull()]["שווי פוסילי"].sum()
     ))
 
-   # 2. handle non-Israeli holdings
+    # 2. handle non-Israeli holdings
     non_il_fossil_holdings = fossil_holdings[fossil_holdings['מספר ני"ע'].isnull()]
     non_il_missing_ISIN_cnt = non_il_fossil_holdings["ISIN"].isnull().sum()
     if non_il_missing_ISIN_cnt > 0:
@@ -155,7 +191,7 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
     print("total fossil holdings without il_sec_num: {}".format(non_il_fossil_holdings["שווי פוסילי"].sum()))
     # 2a. group by ISIN
     non_il_fossil_holdings = non_il_fossil_holdings.groupby([
-        "ParentCorpGroup", "ReportPeriodDate", 'ISIN'
+        "ParentCorpGroup", "ReportPeriodDesc", 'ISIN'
     ])
     non_il_fossil_holdings_agg = non_il_fossil_holdings.agg(
         name=pd.NamedAgg(column="שם המנפיק/שם נייר ערך", aggfunc="first"),
@@ -175,7 +211,7 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
     non_il_fossil_holdings_agg["issuer_num"] = non_il_fossil_holdings_agg["issuer_num"].fillna(
         non_il_fossil_holdings_agg["ISIN"])
     non_il_fossil_holdings_by_issuer = non_il_fossil_holdings_agg.groupby([
-        "ParentCorpGroup", "ReportPeriodDate", 'issuer_num'
+        "ParentCorpGroup", "ReportPeriodDesc", 'issuer_num'
     ], dropna=False)
     non_il_fossil_holdings_by_issuer_agg = non_il_fossil_holdings_by_issuer.agg(
         name=pd.NamedAgg(column="name", aggfunc="first"),
@@ -190,7 +226,7 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
     print("after adding Israeli and non-Israeli: {}".format(fossil_holdings_by_issuer_agg["fossil_sum"].sum()))
     # group by issuer_num
     fossil_holdings_by_issue_grp = fossil_holdings_by_issuer_agg.groupby([
-        "ParentCorpGroup", "ReportPeriodDate", 'issuer_num'
+        "ParentCorpGroup", "ReportPeriodDesc", 'issuer_num'
     ], dropna=False)
     fossil_holdings_by_issuer_agg = fossil_holdings_by_issue_grp.agg(
         name=pd.NamedAgg(column="clean_name", aggfunc="first"),
@@ -199,7 +235,7 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
     ).reset_index()
     # group by holding name (clean)
     fossil_holdings_by_issue_grp = fossil_holdings_by_issuer_agg.groupby([
-        "ParentCorpGroup", "ReportPeriodDate", 'name'
+        "ParentCorpGroup", "ReportPeriodDesc", 'name'
     ], dropna=False)
     fossil_holdings_by_issuer_agg = fossil_holdings_by_issue_grp.agg(
         id=pd.NamedAgg(column="issuer_num", aggfunc="first"),
@@ -212,9 +248,8 @@ def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions
 def compare_fossil_holdings_over_quarters(holdings, quarters, institution):
     fossil_holdings_grouped = group_fossil_holdings_quarters_institutions(holdings, quarters, institution)
     # divide to quarters (take only first 2)
-    report_periods = np.sort(fossil_holdings_grouped["ReportPeriodDate"].unique())
-    prev_q = fossil_holdings_grouped[fossil_holdings_grouped["ReportPeriodDate"] == report_periods[0]]
-    curr_q = fossil_holdings_grouped[fossil_holdings_grouped["ReportPeriodDate"] == report_periods[1]]
+    prev_q = fossil_holdings_grouped[fossil_holdings_grouped["ReportPeriodDesc"] == quarters[0]]
+    curr_q = fossil_holdings_grouped[fossil_holdings_grouped["ReportPeriodDesc"] == quarters[1]]
     # join quarters to compare fossil holdings one by one
     cols = ["name", "id", "fossil_sum", "quantity_sum"]
     comparison = prev_q[cols].merge(curr_q[cols],

@@ -181,7 +181,7 @@ def get_filename_list(reports_path):
     :return: a list of report filenames
     """
     # get all reports from directory
-    reports_fn_list = [join(reports_path,f) for f in listdir(reports_path)
+    reports_fn_list = [join(reports_path, f) for f in listdir(reports_path)
                        if isfile(join(reports_path, f)) and not (f.startswith(".")) and f.endswith((".xlsx", ".xls"))]
     print("number of files to be pre-processed: {}".format(len(reports_fn_list)))
     return reports_fn_list
@@ -349,9 +349,6 @@ def no_holding_num_types():
     return ['זכויות מקרקעין', 'השקעה בחברות מוחזקות', 'השקעות אחרות']
 
 
-
-
-
 def holdings_dtypes():
     """Return holdings dtypes
 
@@ -390,8 +387,8 @@ def clean_holdings(holdings):
     """
     # remove holdings with no name
     holdings['שם המנפיק/שם נייר ערך'] = holdings['שם המנפיק/שם נייר ערך'].astype('str')
-    holdings_clean = holdings[holdings['שם המנפיק/שם נייר ערך'].
-                                  str.replace("0", "").str.replace("nan", "").str.strip() != ""
+    holdings_clean = holdings[
+        holdings['שם המנפיק/שם נייר ערך'].str.replace("0", "").str.replace("nan", "").str.strip() != ""
                               ]
     # remove "total" lines
     total_lines = (holdings_clean['שם המנפיק/שם נייר ערך'].str.startswith('סה"כ')) & (
