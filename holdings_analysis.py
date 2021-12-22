@@ -83,19 +83,20 @@ def get_summary(holdings, group_col, *additional_group_cols):
     return summary
 
 
-def filter_major_companies(holdings):
+def filter_major_companies(holdings, include_subsidiaries=False):
     """filter holdings to include only major institutions
-
     :param holdings: DataFrame
+    :param include_subsidiaries: include subsidiaries as well - default is set to False
     :return: holdings filtered to include only major institutions
     """
     mask = holdings["ParentCorpName"].str.startswith(tuple(get_major_institutions_list()))
-
+    filtered = holdings.loc[mask]
     # removing הלמן-אלדובי חח"י גמל בע"מ 515447035 & 520027715, מנורה מבטחים והסתדרות המהנדסים ניהול קופות גמל בע"מ
-    filtered = holdings[mask][
-        ~holdings[mask]["ParentCorpLegalId"].isin(['I_520027715', 'I_515447035'])
-    ]
-
+    # unless include_subsidiaries flag is set to True
+    if not include_subsidiaries:
+        filtered = filtered.loc[
+            ~filtered["ParentCorpLegalId"].isin(['I_520027715', 'I_515447035'])
+        ]
     filtered['ParentCorpGroup'] = filtered['ParentCorpName'].str.split().str[0].str.split("-").str[0]
     filtered['ReportPeriodDate'] = filtered['ReportPeriodDesc'].map(report_period_desc_to_date)
     return filtered
@@ -135,6 +136,19 @@ def get_midrag_agg_from_company_system_holding_type_stats(stats):
         midrag_agg["תאריך"] == midrag_agg["תאריך"].max()
     ].drop("תאריך", axis=1)
     return midrag_agg
+
+
+def get_latest_q_ranking_agg_from_holdings(holdings):
+    """get aggregated data for ranking of the latest quarter available within a holdings DataFrame
+
+    :param holdings: DataFrame
+    :return: aggregated data for ranking of the latest quarter available within holdings
+    """
+    company_system_holding_type_stats = get_summary(
+        holdings,
+        'ReportPeriodDate', 'ParentCorpGroup', 'SystemName', 'holding_type'
+    )
+    return get_midrag_agg_from_company_system_holding_type_stats(company_system_holding_type_stats)
 
 
 def group_fossil_holdings_quarters_institutions(holdings, quarters, institutions):
