@@ -20,6 +20,7 @@ def get_major_institutions_list():
         'פסגות',
         'הלמן',
         # 'אנליסט',
+        # 'אינפיניטי',
         'ילין'
     ]
     return institutions
