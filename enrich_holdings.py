@@ -346,5 +346,5 @@ def add_fossil_sum(holdings):
     :param holdings: holdings DataFrame with is_fossil and sum columns
     :return: holdings with fossil_sum
     """
-    holdings["שווי פוסילי"] = holdings["is_fossil"] * holdings["שווי"]
+    holdings["שווי פוסילי"] = holdings["is_fossil"].astype(float) * holdings["שווי"].astype(float)
     return holdings
