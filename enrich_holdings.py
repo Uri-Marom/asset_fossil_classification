@@ -2,6 +2,7 @@
 import pandas as pd
 import re
 
+
 # Auxiliary functions
 def id_col_clean(col):
     new_col = pd.Series(col.astype(str).str.strip().str.upper())
@@ -10,6 +11,12 @@ def id_col_clean(col):
         lambda x: None if (x == '0') | (x == 'NAN') | (x == 'NONE') | (x == '') else x
     )
     return new_col
+
+
+def remove_words_without_letters(s):
+    l = s.split()
+    words = [w for w in l if re.search('[a-zA-Zא-ת]', w)]
+    return ' '.join(words)
 
 
 def clean_company(s):
