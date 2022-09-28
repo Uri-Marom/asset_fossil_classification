@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import urllib.request as ur
+import urllib
 import time
 from os import listdir
 from os.path import isfile, join, getmtime
@@ -62,11 +63,17 @@ def download_reports(files_df, to_dir, sleep=6):
     file_num = 1
     for index, row in files_df.iterrows():
         print("Downloading file {} out of {}".format(file_num, files_len), end="\r")
-        url = row["url"]
-        filename = to_dir + str(row["DocumentId"]) + ".xlsx"
-        ur.urlretrieve(url, filename)
-        time.sleep(sleep)
-        file_num += 1
+        try:
+            url = row["url"]
+            filename = to_dir + str(row["DocumentId"]) + ".xlsx"
+            ur.urlretrieve(url, filename)
+            time.sleep(sleep)
+        except urllib.error.HTTPError as err:
+            print("HTTP error {} when trying to download report {}".format(err.code, filename))
+            print(row["ParentCorpName"], row["SystemName"], row["Name"], sep=" | ")
+            continue
+        finally:
+            file_num += 1
 
 
 def fix_sheet_name(sheet_name):
