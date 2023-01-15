@@ -272,6 +272,8 @@ def prepare_mapping(mapping, by_id_type, add_id_type):
     """
     mapping[by_id_type] = id_col_clean(mapping[by_id_type])
     mapping[add_id_type] = id_col_clean(mapping[add_id_type])
+    # fixed bug - removed rows with ANY NA before
+    mapping = mapping[[by_id_type, add_id_type]]
     # remove rows with missing key or value
     mapping = mapping.dropna()
     mapping = mapping.drop_duplicates(by_id_type).set_index(by_id_type)
