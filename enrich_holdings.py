@@ -24,7 +24,7 @@ def clean_company(s):
     # remove special characters (dot, slash, asterisk ,percentage)
     s = re.sub(r'[\\/\\.\\%\\*\\"]+', '', s)
     # handle strings with "-", inc, ltd etc. - if long enough remove everything afterwards
-    cut_from_list = ["-", " INC", " LTD", " CORP", " בעמ", " אגח", " PERP"]
+    cut_from_list = ["-", " INC", " LTD", " CORP", " בעמ", " אגח", " PERP", "ORD"]
     cut_loc = min([s.find(c) for c in cut_from_list if s.find(c) > 0], default=-1)
     if cut_loc > 3:
         s = s[:cut_loc]

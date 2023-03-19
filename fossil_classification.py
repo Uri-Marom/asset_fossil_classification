@@ -186,7 +186,7 @@ def prepare_fff(df, fossil_only=False):
 # TLV (TASE) companies list, maintained by Clean Money Forum
 # TODO: download file from a repository or db instead of using local
 def fetch_latest_tlv_list(tlv_path="data_sources/TASE companies - fossil classification.xlsx"):
-    tlv = pd.read_excel(tlv_path, sheet_name=0, skiprows=range(3))
+    tlv = pd.read_excel(tlv_path, sheet_name=0, skiprows=range(3), dtype={'מספר מנפיק': int, 'מספר תאגיד': int})
     print("\n** Fetching tlv companies fossil classification **")
     return tlv
 
