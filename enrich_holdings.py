@@ -53,9 +53,13 @@ def is_number(s):
     :param s: string
     :return: true if s is a float, false otherwise
     """
+    from math import isnan
     try:
         float(s)
-        return True
+        if not isnan(float(s)):
+            return True
+        else:
+            return False
     except ValueError:
         return False
 
@@ -71,8 +75,8 @@ def is_il_holding(row):
     heb_char = any_heb_char(sec_name)
     numeric_sec_num = is_number(sec_num)
     sec_num_il_isin = sec_num.startswith("IL")
-    if ("ISIN" in row) & (row["ISIN"] is not None):
-        sec_ISIN = row["ISIN"].upper().strip()
+    if ("ISIN" in row) and (row["ISIN"] is not None):
+        sec_ISIN = str(row["ISIN"]).upper().strip()
         sec_ISIN_il = sec_ISIN.startswith("IL")
         sec_num_il_isin = sec_num_il_isin | sec_ISIN_il
     return heb_char | numeric_sec_num | sec_num_il_isin
@@ -228,10 +232,10 @@ def report_period_desc_to_date(period_desc):
     return period_date
 
 
-def fetch_latest_tlv_sec_num_to_issuer():
+def fetch_latest_tlv_sec_num_to_issuer(path="data_sources/TASE mapping.csv"):
     # TODO: scrape from webpage
     #  "https://info.tase.co.il/_layouts/Tase/ManagementPages/Export.aspx?sn=none&GridId=106&AddCol=1&Lang=he-IL&CurGuid={6B3A2B75-39E1-4980-BE3E-43893A21DB05}&ExportType=3"
-    df = pd.read_csv("data_sources/TASE mapping.csv",
+    df = pd.read_csv(path,
                      encoding="ISO-8859-8",
                      skiprows=3,
                      dtype=str

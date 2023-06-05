@@ -740,7 +740,8 @@ def classify_holdings(
         holdings_path="data/holdings_for_classification/missing_cls.csv",
         holdings_ticker_col=None,
         holdings_company_col="שם המנפיק/שם נייר ערך",
-        sheet_num=0
+        sheet_num=0,
+        skip_fff = False
 ):
     # 1. prepare holdings file for classification
     print("\n1. Preparing holding file")
@@ -779,45 +780,49 @@ def classify_holdings(
     )
     tlv = prepare_tlv(fetch_latest_tlv_list())
     holdings_with_tlv = match_holdings_with_tlv(holdings_with_prev, tlv)
-    # 6. get Fossil Free Funds company list, transform to one row per ticker symbol
-    print("\n6. Preparing Fossil Free Funds company list")
-    fff_all = fetch_latest_fff_list()
-    fff = prepare_fff(fff_all)
-    # 7. match holdings with FFF
-    print("\n7. Matchinging holdings with Fossil Free Funds company list")
-    # TODO: if needed, add Ticker per holding using open FIGI API (only if company name isn't enough)
-    # 7a. match by ticker if exists
-    if holdings_ticker_col:
-        holdings_with_fff_by_ticker = match_holdings_with_fff_by_ticker(
-            holdings_with_tlv,
-            fff,
-            holdings_ticker_col=holdings_ticker_col,
-            holdings_company_col=holdings_company_col
+    if not skip_fff:
+        # 6. get Fossil Free Funds company list, transform to one row per ticker symbol
+        print("\n6. Preparing Fossil Free Funds company list")
+        fff_all = fetch_latest_fff_list()
+        fff = prepare_fff(fff_all)
+        # 7. match holdings with FFF
+        print("\n7. Matchinging holdings with Fossil Free Funds company list")
+        # TODO: if needed, add Ticker per holding using open FIGI API (only if company name isn't enough)
+        # 7a. match by ticker if exists
+        if holdings_ticker_col:
+            holdings_with_fff_by_ticker = match_holdings_with_fff_by_ticker(
+                holdings_with_tlv,
+                fff,
+                holdings_ticker_col=holdings_ticker_col,
+                holdings_company_col=holdings_company_col
+            )
+        else:
+            holdings_with_fff_by_ticker = holdings_with_tlv
+        # output(holdings_with_fff_by_ticker, "after_ticker_" + output_path)
+        # 7b. match by fuzzy company name
+        # prepare common words to ignore while matching
+        common = get_common_words_in_company_name(
+            holdings_with_fff_by_ticker,
+            fff_all,
+            holdings_company_col=holdings_company_col,
+            fff_company_col="Company"
         )
+        # 7. match with Fossil Free Funds company list
+        holdings_with_fff_by_company_name = match_holdings_with_fff_by_company_name(
+            holdings_with_fff_by_ticker,
+            fff,
+            common_words_in_company=common,
+            holdings_company_col=holdings_company_col,
+            fff_company_col="Company"
+        )
+        # TODO: inner matching - consolidate to issuer based on ISIN
+        # (doable in the US - without the last characters, check about the others)
+        # 8. calculate is_fossil (if any of the is_fossil_* flags exists, take it)
+        holdings_before_consolidation = holdings_with_fff_by_company_name
     else:
-        holdings_with_fff_by_ticker = holdings_with_tlv
-    # output(holdings_with_fff_by_ticker, "after_ticker_" + output_path)
-    # 7b. match by fuzzy company name
-    # prepare common words to ignore while matching
-    common = get_common_words_in_company_name(
-        holdings_with_fff_by_ticker,
-        fff_all,
-        holdings_company_col=holdings_company_col,
-        fff_company_col="Company"
-    )
-    # 7. match with Fossil Free Funds company list
-    holdings_with_fff_by_company_name = match_holdings_with_fff_by_company_name(
-        holdings_with_fff_by_ticker,
-        fff,
-        common_words_in_company=common,
-        holdings_company_col=holdings_company_col,
-        fff_company_col="Company"
-    )
-    # TODO: inner matching - consolidate to issuer based on ISIN
-    # (doable in the US - without the last characters, check about the others)
-    # 8. calculate is_fossil (if any of the is_fossil_* flags exists, take it)
+        holdings_before_consolidation = holdings_with_tlv
     print("\n8. Calculating is_fossil")
-    holdings_final = consolidate_is_fossil(holdings_with_fff_by_company_name)
+    holdings_final = consolidate_is_fossil(holdings_before_consolidation)
     # output(holdings_final, "debug_" + output_path)
     # 9. propagate is_fossil across ISIN and LEI (fill in missing is_fossil according to existing ones within group)
     print("\n9. Propagating is_fossil across il_sec_num, ISIN and LEI")
