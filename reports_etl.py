@@ -8,6 +8,7 @@ from os.path import isfile, join, getmtime
 import re
 from pathlib import Path
 from enrich_holdings import *
+import requests
 
 
 def last_updated():
@@ -30,6 +31,51 @@ def fetch_all_company_holdings_cls_path():
     :return: the relative path of all_company_holdings_cls file
     """
     return "data/all_company_holdings_cls"
+
+
+def get_report_data_into_data_frame(from_year, from_q, to_year, to_q, report_type, system, report_status=1, corp=None):
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9,he;q=0.8',
+        'Connection': 'keep-alive',
+        'Origin': 'https://employersinfocmp.cma.gov.il',
+        'Referer': 'https://employersinfocmp.cma.gov.il/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
+        'content-type': 'application/json',
+        'sec-ch-ua': '"Chromium";v="112", "Google Chrome";v="112", "Not:A-Brand";v="99"',
+        'sec-ch-ua-mobile': '?1',
+        'sec-ch-ua-platform': '"Android"',
+    }
+
+    json_data = {
+        'corporation': corp,
+        'fromYear': from_year,
+        'fromQuarter': from_q,
+        'toYear': to_year,
+        'toQuarter': to_q,
+        'reportFromDate': None,
+        'reportToDate': None,
+        'investmentName': None,
+        'reportType': report_type,
+        'systemField': system,
+        'statusReport': report_status,
+    }
+
+    response = requests.post(
+        'https://employersinfocmp.cma.gov.il/api/PublicReporting/GetPublicReports',
+        headers=headers,
+        json=json_data,
+    )
+    reports = pd.DataFrame.from_dict(response.json())
+    # add download links to response dataframe
+    download_link_prefix = "https://employersinfocmp.cma.gov.il/api/PublicReporting/downloadFiles?IdDoc="
+    download_link_suffix = "&extention=XLSX"
+    reports["url"] = download_link_prefix + reports["DocumentId"].astype(str) + download_link_suffix
+    print("number of reports for {} q{} until {} q{}: {}".format(from_year, from_q, to_year, to_q, reports.shape[0]))
+    return reports
 
 
 def get_reports_from_response(response_directory):
@@ -74,6 +120,64 @@ def download_reports(files_df, to_dir, sleep=6):
             continue
         finally:
             file_num += 1
+
+
+def connect_to_gspreadsheets_api(json_keyfile_name):
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    scope = ['https://spreadsheets.google.com/feeds',
+             'https://www.googleapis.com/auth/spreadsheets',
+             'https://www.googleapis.com/auth/drive.file',
+             'https://www.googleapis.com/auth/drive']
+
+    # Reading Credentails from ServiceAccount Keys file
+    credentials = ServiceAccountCredentials.from_json_keyfile_name(json_keyfile_name, scope)
+
+    # intitialize the authorization object
+    gc = gspread.authorize(credentials)
+    return gc
+
+
+def add_document_id_by_cols(df, reports, system, id_cols):
+    # convert all id cols to string
+    for id_col in id_cols:
+        df[id_col] = df[id_col].astype(str)
+    # filter relevant system reports, convert ids to string
+    system_reports = reports.loc[reports['SystemName'] == system]
+    system_reports['ParentCorpLegalId'] = system_reports['ParentCorpLegalId'].astype(str)
+    system_reports['ProductNum'] = system_reports['ProductNum'].astype(str)
+    # merge
+    df_with_doc_id = pd.merge(
+        left=df,
+        right=system_reports,
+        how='left',
+        left_on=id_cols,
+        right_on=['ParentCorpLegalId', 'ProductNum']
+    )
+    cols_to_keep = [c for c in df.columns] + ['DocumentId']
+    cols_to_keep = [col for col in df_with_doc_id.columns if col in cols_to_keep]
+    result_sheet = df_with_doc_id[cols_to_keep]
+    return result_sheet
+
+
+def add_document_ids_to_all_sheets(gc, gss_url, reports):
+    system_id_cols= {
+        "פנסיה": ['NUM_HEVRA','ID_MASLUL_RISHUY'],
+        "גמל": ['NUM_HEVRA','ID'],
+        "ביטוח": ['NUM_HEVRA','ID_GUF']
+    }
+    # rename System for insurance reports if needed
+    reports.loc[reports["SystemName"] == 'חיים ואובדן כושר עבודה', "SystemName"] = 'ביטוח'
+    reports["DocumentId"] = reports["DocumentId"].astype(str)
+    # iterate over worksheets and add document_id from reports
+    gss = gc.open_by_url(gss_url)
+    for sys in system_id_cols:
+        ws = gss.worksheet(sys)
+        df = pd.DataFrame(ws.get_all_records())
+        df_with_document_id = add_document_id_by_cols(df, reports, sys, system_id_cols[sys])
+        # converting to string to prevent error in update
+        df_with_document_id = df_with_document_id.astype(str)
+        ws.update([df_with_document_id.columns.values.tolist()] + df_with_document_id.values.tolist())
 
 
 def fix_sheet_name(sheet_name):
@@ -400,13 +504,17 @@ def clean_holdings(holdings):
     # remove "total" lines
     total_lines = (holdings_clean['שם המנפיק/שם נייר ערך'].str.startswith('סה"כ')) & (
         holdings_clean['מספר ני"ע'].isnull())
-    total_lines = total_lines | (holdings_clean['שם המנפיק/שם נייר ערך'].str.startswith(':סה"כ'))
+    total_lines = total_lines | (holdings_clean['שם המנפיק/שם נייר ערך'].str.startswith('סה"כ'))
     holdings_clean = holdings_clean[~total_lines]
     # removing holdings with no num when applicable
     no_holding = no_holding_num_types()
     missing_holding_num_lines = (~holdings_clean["holding_type"].isin(no_holding)) & (
         holdings_clean['מספר ני"ע'].isnull())
     holdings_clean = holdings_clean[~missing_holding_num_lines]
+    # remove holdings with no data texts
+    no_data_texts = ['הגעת לשדה האחרון בשורה זו', 'תא ללא תוכן, המשך בתא הבא']
+    missing_text_data_in_security_num =  (holdings_clean['מספר ני"ע'].isin(no_data_texts))
+    holdings_clean = holdings_clean[~missing_text_data_in_security_num]
     # remove lines with שווי that is not a number
     holdings_clean = holdings_clean[holdings_clean['שווי'].map(is_number)]
     print("\nbefore cleaning: {}\n after cleaning: {}".format(len(holdings), len(holdings_clean)))
