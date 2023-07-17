@@ -847,7 +847,7 @@ def add_classifications_to_prev_class(holdings_cls_path, prev_class_path):
     holdings_cls = holdings_cls[
         ["שם המנפיק/שם נייר ערך", 'מספר ני"ע', 'מספר מנפיק', 'ISIN', 'מספר תאגיד', 'LEI', 'is_fossil']]
     # add today's date to new classifications
-    holdings_cls["classification_date"] = datetime.today().strftime('%Y-%m-%d')
+    holdings_cls["classification_date"] = datetime.today().strftime('%Y-%m-%d %H:%M')
     prev_class = pd.read_csv(prev_class_path, dtype=str)
     prev_class_new = pd.concat([prev_class, holdings_cls]).sort_values("classification_date", ascending=False)
     return prev_class_new
