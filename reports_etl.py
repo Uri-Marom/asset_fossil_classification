@@ -123,8 +123,8 @@ def download_reports(files_df, to_dir, sleep=6):
 
 
 def connect_to_gspreadsheets_api(json_keyfile_name):
-    import gspread
     from oauth2client.service_account import ServiceAccountCredentials
+    import gspread
     scope = ['https://spreadsheets.google.com/feeds',
              'https://www.googleapis.com/auth/spreadsheets',
              'https://www.googleapis.com/auth/drive.file',
@@ -162,8 +162,10 @@ def add_document_id_by_cols(df, reports, system, id_cols):
 
 def add_document_ids_to_all_sheets(gc, gss_url, reports):
     system_id_cols= {
-        "פנסיה": ['NUM_HEVRA','ID_MASLUL_RISHUY'],
-        "גמל": ['NUM_HEVRA','ID'],
+        "פנסיה": ['NUM_HEVRA','ID_MASLUL_RISHUY']
+        ,
+        "גמל": ['NUM_HEVRA','ID']
+        ,
         "ביטוח": ['NUM_HEVRA','ID_GUF']
     }
     # rename System for insurance reports if needed
