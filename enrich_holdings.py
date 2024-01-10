@@ -128,7 +128,7 @@ def find_id_col(df, id_type):
     max_cnt = 0
     for col in df:
         # disregard ParentCorpId column
-        if col not in ["ParentCorpLegalId"]:
+        if col not in ["ParentCorpLegalId"] and (col.find("parent_corp") == -1):
             cnt = sum(df[col].astype(str).str.strip().str.contains(pattern, na=False))
             if cnt > max_cnt:
                 id_col = col

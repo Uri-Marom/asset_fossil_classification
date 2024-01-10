@@ -98,10 +98,12 @@ def find_il_corp_num_col(df):
     pattern = r"^5([0-9]){8}$"
     max_pattern_cnt = 0
     for col in df:
-        pattern_cnt = sum(df[col].astype(str).str.strip().str.contains(pattern, na=False))
-        if pattern_cnt > max_pattern_cnt:
-            max_col = col
-            max_pattern_cnt = pattern_cnt
+        # ignoring parent_corp_legal_id
+        if (col.find("parent_corp") == -1):
+            pattern_cnt = sum(df[col].astype(str).str.strip().str.contains(pattern, na=False))
+            if pattern_cnt > max_pattern_cnt:
+                max_col = col
+                max_pattern_cnt = pattern_cnt
 
     if max_pattern_cnt > 0:
         print("\nHolding file Israel Corp col is: " + max_col)
