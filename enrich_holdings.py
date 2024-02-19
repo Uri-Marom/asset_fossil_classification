@@ -353,11 +353,11 @@ def load_mappings_and_add_ids_to_holdings(holdings):
     return holdings
 
 
-def add_fossil_sum(holdings):
+def add_fossil_sum(holdings, value_col='שווי'):
     """ add fossil_sum to holdings DataFrame
-
     :param holdings: holdings DataFrame with is_fossil and sum columns
-    :return: holdings with fossil_sum
+    :param value_col: name of column with holdings value, with default
+    :return: holdings with fossil_sum 'שווי'
     """
-    holdings["שווי פוסילי"] = holdings["is_fossil"].astype(float) * holdings["שווי"].astype(float)
+    holdings["שווי פוסילי"] = holdings["is_fossil"].astype(float) * holdings[value_col].astype(float)
     return holdings

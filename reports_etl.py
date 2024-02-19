@@ -630,17 +630,21 @@ def get_latest_fossil_classifications(prev_cls_fn):
     return latest_cls_by_sec_num, latest_cls_by_ISIN
 
 
-def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by_ISIN):
+def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by_ISIN,
+                               sec_num_col='מספר ני"ע',
+                               value_col='שווי'):
     """Add fossil classifications to a holding file
 
     :param holdings: a holding file
     :param fossil_cls_by_il_sec_num: fossil classification, one row per security_num
     :param fossil_cls_by_ISIN: fossil classification, one row per ISIN
+    :param sec_num_col: name of column with security number and ISIN (taken from reports as is)
+    :param value_col: name of column with holding value
     :return: holding file with added classification and fossil sum columns
     """
     # 1. separate holdings with no holding number
     link_by_sec_num = (
-            (holdings['מספר ני"ע'].notnull()) &
+            (holdings[sec_num_col].notnull()) &
             # ignore Israeli sec num for holding types where it should be ignored
             (~holdings["holding_type"].isin(ignore_id_types_holding_type()['מספר ני"ע']))
     )
@@ -651,10 +655,10 @@ def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by
     print("without holding number: {}".format(len(holdings_no_num)))
     # 2a. add fossil classification based on Israeli security num
     # clean join columns
-    holdings_with_num['מספר ני"ע'] = holdings_with_num['מספר ני"ע'].astype('str').str.strip().str.upper()
+    holdings_with_num[sec_num_col] = holdings_with_num[sec_num_col].astype('str').str.strip().str.upper()
     fossil_cls_by_il_sec_num.index = fossil_cls_by_il_sec_num.index.astype('str').str.strip()
     holdings_cls = holdings_with_num.merge(fossil_cls_by_il_sec_num,
-                                           left_on='מספר ני"ע',
+                                           left_on=sec_num_col,
                                            right_index=True,
                                            how='left'
                                            )
@@ -664,7 +668,7 @@ def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by
     # clean join columns
     fossil_cls_by_ISIN.index = fossil_cls_by_ISIN.index.astype('str').str.strip()
     holdings_cls = holdings_cls.merge(fossil_cls_by_ISIN,
-                                      left_on='מספר ני"ע',
+                                      left_on=sec_num_col,
                                       right_index=True,
                                       how='left',
                                       suffixes=['', '_new']
@@ -674,7 +678,7 @@ def add_fossil_classifications(holdings, fossil_cls_by_il_sec_num, fossil_cls_by
     print("Holdings after fossil classification by ISIN:")
     print(holdings_cls["is_fossil"].value_counts(dropna=False))
     # 3. add fossil sum שווי פוסילי
-    holdings_cls = add_fossil_sum(holdings_cls)
+    holdings_cls = add_fossil_sum(holdings_cls, value_col)
     print("total fossil sum: {}".format(holdings_cls["שווי פוסילי"].sum()))
     holdings_cls = pd.concat([holdings_cls, holdings_no_num])
     print("holdings count before classification: {}".format(len(holdings)))
