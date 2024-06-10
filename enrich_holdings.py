@@ -236,10 +236,15 @@ def fetch_latest_tlv_sec_num_to_issuer(path="data_sources/TASE mapping.csv"):
     # TODO: scrape from webpage
     #  "https://info.tase.co.il/_layouts/Tase/ManagementPages/Export.aspx?sn=none&GridId=106&AddCol=1&Lang=he-IL&CurGuid={6B3A2B75-39E1-4980-BE3E-43893A21DB05}&ExportType=3"
     df = pd.read_csv(path,
-                     encoding="ISO-8859-8",
-                     skiprows=3,
+                     # encoding="ISO-8859-8",
+                     skiprows=range(2),
                      dtype=str
                      )
+
+    # rename columns due to new format
+    if 'מספר ני"ע' not in df.columns and '''מס' ני''ע''' in df.columns:
+        print('''renaming מס' ני''ע to מספר ני"ע''')
+        df = df.rename({'''מס' ני''ע''': 'מספר ני"ע'}, axis=1)
     # print("TLV sec num to issuer columns: {}".format(df.columns))
     return df
 
@@ -330,7 +335,8 @@ def add_all_id_types_to_holdings(holdings, tlv_s2i, isin2lei):
     """
     holdings = fix_id_cols(holdings)
     holdings = add_id_by_another_id_mapping(holdings, add_id_type="ISIN", by_id_type='מספר ני"ע', mapping=tlv_s2i)
-    holdings = add_id_by_another_id_mapping(holdings, add_id_type="מספר מנפיק", by_id_type="מספר תאגיד",
+    if 'מספר תאגיד' in tlv_s2i.columns:
+        holdings = add_id_by_another_id_mapping(holdings, add_id_type="מספר מנפיק", by_id_type="מספר תאגיד",
                                             mapping=tlv_s2i)
     holdings = add_id_by_another_id_mapping(holdings, add_id_type="מספר מנפיק", by_id_type='מספר ני"ע', mapping=tlv_s2i)
     holdings = add_id_by_another_id_mapping(holdings, add_id_type="מספר מנפיק", by_id_type='ISIN', mapping=tlv_s2i)
