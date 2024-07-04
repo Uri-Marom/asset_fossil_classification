@@ -96,6 +96,22 @@ def get_reports_from_response(response_directory):
     return reports
 
 
+def add_filename_to_report(row):
+    parent_corp_id = row["ParentCorpLegalId"]
+    period_desc = row["ReportPeriodDesc"]
+    y = period_desc[2:4]
+    q = period_desc[-1]
+    system = row["SystemName"]
+    if (system == "פנסיה"):
+        sys_abb = "pn"
+    elif (system == "גמל"):
+        sys_abb = "gm"
+    elif (system == "ביטוח"):
+        sys_abb = "in"
+    filename = parent_corp_id + "_" + sys_abb + "_p_0" + q + y + "." + row["fileExt"]
+    return filename
+
+
 def download_reports(files_df, to_dir, sleep=6):
     """Download reports from files_df, with a delay in between downloads
 
@@ -111,7 +127,7 @@ def download_reports(files_df, to_dir, sleep=6):
         print("Downloading file {} out of {}".format(file_num, files_len), end="\r")
         try:
             url = row["url"]
-            filename = to_dir + str(row["DocumentId"]) + ".xlsx"
+            filename = to_dir + row["filename"]
             ur.urlretrieve(url, filename)
             time.sleep(sleep)
         except urllib.error.HTTPError as err:
@@ -353,9 +369,9 @@ def get_asset_allocation_from_summary_sheet(summary_sheet):
     :param summary_sheet: a summary data of a report
     :return: a DataFrame - could be empty
     """
-    # remove header - first 4 rows
-    if len(summary_sheet) > 4:
-        summary_sheet = summary_sheet.iloc[4:, ]
+    # remove header - first 1 row
+    if len(summary_sheet) > 1:
+        summary_sheet = summary_sheet.iloc[1:, ]
     # locate the word מזומנים as anchor for asset allocation
     anchor_loc = np.where(summary_sheet.apply(lambda col: col.str.contains('מזומנים', na=False), axis=1))
     if anchor_loc[0].size > 0:
@@ -390,7 +406,7 @@ def process_summary_sheets(reports_fn_list):
     for fn in reports_fn_list:
         print("Processing report {} out of {}".format(rep_num, list_len), end="\r")
         try:
-            sheet = pd.read_excel(fn, sheet_name="סכום נכסי הקרן", header=None)
+            sheet = pd.read_excel(fn, sheet_name="סכום נכסים", header=None)
             asset_alloc = get_asset_allocation_from_summary_sheet(sheet)
             if not asset_alloc.empty:
                 # add report_id
@@ -416,7 +432,7 @@ def get_totals(summary_sheets):
     :param summary_sheets: a DataFrame of data allocations from reports summary sheets
     :return: the totals extracted from the reports summary sheets
     """
-    totals = summary_sheets[summary_sheets["asset"].str.startswith('סה')]
+    totals = summary_sheets[summary_sheets["asset"].str.startswith('סך הכל נכסים')]
     print("Number of totals found: {}".format(totals["report_id"].nunique()))
     return totals
 
