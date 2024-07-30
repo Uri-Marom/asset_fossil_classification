@@ -108,6 +108,8 @@ def add_filename_to_report(row):
         sys_abb = "gm"
     elif (system == "ביטוח"):
         sys_abb = "in"
+    elif (system == "מובטח תשואה"):
+        sys_abb = "ca"
     filename = parent_corp_id + "_" + sys_abb + "_p_0" + q + y + "." + row["fileExt"]
     return filename
 
